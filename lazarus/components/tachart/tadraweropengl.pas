@@ -14,13 +14,8 @@
   - If define CHARTGL_USE_LAZFREETYPE is activated in the package options then
     the LazFreeType library is used for rendering text. If not, the GLUT library
     is used instead. Note that GLUT is not available on every system.
-
-  - If LazFreeType does not find the fonts needed call InitFonts at the beginning
-    of the program and specify the path to the font folder as a parameter.
-    Several folders can be used if separated by LineEnding codes.
-
-  - The drawer does not support rotated text at the moment.
 }
+
 unit TADrawerOpenGL;
 
 {$H+}
@@ -95,11 +90,6 @@ type
     procedure SetTransparency(ATransparency: TChartTransparency);
   end;
 
-{$IFDEF CHARTGL_USE_LAZFREETYPE}
- procedure InitFonts(AFontDir: string = '');
- procedure DoneFonts;
-{$ENDIF}
-
 
 implementation
 
@@ -108,7 +98,7 @@ uses
   Math,
  {$IFDEF CHARTGL_USE_LAZFREETYPE}
   LazFileUtils,
-  EasyLazFreeType, LazFreeTypeFPImageDrawer, LazFreeTypeFontCollection,
+  EasyLazFreeType, LazFreeTypeFPImageDrawer, LazFreeTypeFontCollection, TAFonts,
  {$ELSE}
   Glut,
  {$ENDIF}
@@ -145,7 +135,6 @@ type
   end;
 
 var
-  FontDirList: TStrings = nil;
   GLFreeTypeHelper: TGLFreeTypeHelper = nil;
 
 function NextPowerOf2(n: Integer): Integer;
@@ -153,96 +142,6 @@ begin
   Result := 1;
   while Result < n do
     Result := Result * 2;
-end;
-
-procedure CreateFontDirList;
-var
-  s: String;
-begin
-  FontDirList := TStringList.Create;
- {$IFDEF WINDOWS}
-  s := SHGetFolderPathUTF8(20); // CSIDL_FONTS = 20
-  if s <> '' then
-    FontDirList.Add(s);
- {$ENDIF}
- {$IFDEF linux}
-  FontDirList.Add('/usr/share/cups/fonts/');
-  FontDirList.Add('/usr/share/fonts/truetype/');
-  FontDirList.Add('/usr/local/lib/X11/fonts/');
-  FontDirList.Add(GetUserDir + '.fonts/');
- {$ENDIF}
-end;
-
-procedure InitFonts(AFontDir: String = '');
-
-  { Duplicates functionality in FontCollection.AddFolder in order to be able to
-    ignore exceptions due to font read errors (occur on Linux Mint with font
-    NanumMyeongjo.ttf }
-  procedure AddFolder(AFolder: string);
-  var
-    files: TStringList;
-    i: integer;
-  begin
-    AFolder := ExpandFileName(AFolder);
-    if (length(AFolder) <> 0) and (AFolder[length(AFolder)] <> PathDelim) then
-      AFolder += PathDelim;
-    files := TStringList.Create;
-    FontCollection.BeginUpdate;
-    try
-      FindAllFiles(files, AFolder, '*.ttf', true);
-      files.Sort;
-      for i := 0 to files.Count-1 do
-        try
-          FontCollection.AddFile(files[i]);
-        except
-        end;
-    finally
-      FontCollection.EndUpdate;
-      files.Free;
-    end;
-  end;
-
-var
-  i: Integer;
-begin
-  if FontDirList = nil then
-    CreateFontDirList;
-
-  if AFontDir <> '' then
-    FontDirList.Text := AFontDir;
-
-  FontCollection := TFreeTypeFontCollection.Create;
-  for i:=0 to FontDirList.Count-1 do
-    AddFolder(FontDirList[i]);
-
-  GLFreeTypeHelper := TGLFreeTypeHelper.Create;
-end;
-
-procedure DoneFonts;
-begin
-  FreeAndNil(GLFreeTypeHelper);
-  FreeAndNil(FontDirList);
-  FreeAndNil(FontCollection);
-end;
-
-function LoadFont(AFontName: String; AStyle: TFreeTypeStyles): TFreeTypeFont;
-var
-  familyItem: TCustomFamilyCollectionItem;
-  fontItem: TCustomFontCollectionItem;
-  style: String;
-begin
-  Result := nil;
-  familyItem := FontCollection.Family[AFontName];
-  if familyItem <> nil then begin
-    style := '';
-    if (ftsBold in AStyle) then style := 'Bold';
-    if (ftsItalic in AStyle) then style := style + ' Italic';
-    fontItem := familyItem.GetFont(style);
-    if fontItem <> nil then begin
-      Result := fontItem.CreateFont;
-      Result.Style := AStyle;
-    end;
-  end;
 end;
 
 
@@ -462,6 +361,7 @@ constructor TOpenGLDrawer.Create;
 {$IFDEF CHARTGL_USE_LAZFREETYPE}
 begin
   inherited;
+  InitFonts;
 end;
 {$ELSE}
 var
@@ -823,16 +723,6 @@ begin
     glutBitmapCharacter(GLUT_BITMAP_8_BY_13, Ord(AText[i]));
 end;
 {$ENDIF}
-
-initialization
- {$IFDEF CHARTGL_USE_LAZFREETYPE}
-  InitFonts;
- {$ENDIF}
-
-finalization
- {$IFDEF CHARTGL_USE_LAZFREETYPE}
-  DoneFonts;
- {$ENDIF}
 
 end.
 
