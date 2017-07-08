@@ -1,4 +1,4 @@
-{ $Id: win32int.pp 54366 2017-03-08 14:29:37Z ondrej $ }
+{ $Id: win32int.pp 55461 2017-07-08 05:13:03Z ondrej $ }
 {
  /***************************************************************************
                          WIN32INT.pp  -  Win32Interface Object
@@ -28,8 +28,8 @@ interface
   successful compilation.
 }
 uses
-  Windows, // keep as first
-  Classes, SysUtils, RtlConsts, ActiveX, MultiMon, CommCtrl,
+  Windows, imm, // keep as first
+  Classes, SysUtils, RtlConsts, ActiveX, MultiMon, CommCtrl, character,
   // LCL
   LCLPlatformDef, InterfaceBase, LCLIntf, LclProc, LCLType, LMessages,
   Controls, Buttons, Forms, Dialogs, GraphMath, GraphType, StdCtrls,

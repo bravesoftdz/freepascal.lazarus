@@ -2278,23 +2278,19 @@ var
     OldLen: Integer;
   begin
     AddLen:=TokenStr-StartPos;
-    if AddLen=0 then exit;
-    OldLen:=length(FCurTokenString);
-    SetLength(FCurTokenString,OldLen+AddLen);
-    Move(StartPos^,PChar(PChar(FCurTokenString)+OldLen)^,AddLen);
-    StartPos:=TokenStr;
+    if AddLen=0 then
+      FCurTokenString:=''
+    else
+      begin
+      OldLen:=length(FCurTokenString);
+      SetLength(FCurTokenString,OldLen+AddLen);
+      Move(StartPos^,PChar(PChar(FCurTokenString)+OldLen)^,AddLen);
+      StartPos:=TokenStr;
+      end;
   end;
 
 begin
   FCurTokenString := '';
-  if (TokenStr = nil) or (TokenStr^ = #0) then
-    if not FetchLine then
-    begin
-      Result := tkEOF;
-      FCurToken := Result;
-      exit;
-    end;
-
   StartPos:=TokenStr;
   repeat
     case TokenStr[0] of
@@ -2305,6 +2301,7 @@ begin
             begin
             Result := tkLineEnding;
             FCurToken := Result;
+            FetchLine;
             exit;
             end;
           if not FetchLine then
@@ -3332,9 +3329,9 @@ end;
 function TPascalScanner.GetCurColumn: Integer;
 begin
   If (TokenStr<>Nil) then
-    Result := TokenStr - PChar(CurLine)
+    Result := TokenStr - PChar(CurLine) + 1
   else
-    Result := 0;
+    Result := 1;
 end;
 
 function TPascalScanner.OnCondEvalFunction(Sender: TCondDirectiveEvaluator;

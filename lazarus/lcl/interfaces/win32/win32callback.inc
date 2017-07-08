@@ -384,7 +384,7 @@ type
     function IsComboEditSelection: boolean;
     procedure HandleBitBtnCustomDraw(ABitBtn: TCustomBitBtn);
     procedure HandleDropFiles;
-    function HandleUnicodeChar(var AChar: Word): boolean;
+    function HandleUnicodeChar(var AChar: TUTF8Char): boolean;
     procedure UpdateDrawItems;
     procedure UpdateDrawListItem(aMsg: UInt);
     procedure UpdateLMMovePos(X, Y: Smallint);
@@ -1114,28 +1114,18 @@ begin
 end;
 
 // returns false if the UnicodeChar is not handled
-function TWindowProcHelper.HandleUnicodeChar(var AChar: Word): boolean;
+function TWindowProcHelper.HandleUnicodeChar(var AChar: TUTF8Char): boolean;
 var
-  OldUTF8Char, UTF8Char: TUTF8Char;
-  WS: WideString;
+  OldChar: TUTF8Char;
 begin
   Result := False;
-  UTF8Char := UTF16ToUTF8(WideString(WideChar(AChar)));
-  OldUTF8Char := UTF8Char;
+  OldChar := AChar;
   if Assigned(lWinControl) then
   begin
     // if somewhere key is changed to '' then don't process this message
-    WinProcess := not lWinControl.IntfUTF8KeyPress(UTF8Char, 1, False);
+    WinProcess := not lWinControl.IntfUTF8KeyPress(AChar, 1, False);
     // if somewhere key is changed then don't perform a regular keypress
-    Result := not WinProcess or (UTF8Char <> OldUTF8Char);
-    if Result then
-    begin
-      WS := UTF8ToUTF16(UTF8Char);
-      if Length(WS) > 0 then
-        AChar := Word(WS[1])
-      else
-        AChar := 0;
-    end;
+    Result := not WinProcess or (AChar <> OldChar);
   end;
 end;
 
@@ -1231,11 +1221,43 @@ begin
 end;
 
 procedure TWindowProcHelper.DoMsgChar(var WinResult: LResult);
+var
+  AHIMC: HIMC;
+  NewKeyLen: LONG;
+  NewKey: WideString;
+  NewKeyUTF8: TUTF8Char;
 begin
+  OrgCharCode := Word(WParam);
+
+  if TCharacter.IsSurrogate(WideChar(OrgCharCode)) then
+  begin
+    WinProcess := True;
+    Exit;
+  end;
+
+  AHIMC := ImmGetContext(Window);
+  if AHIMC<>0 then
+  begin
+    try
+      NewKeyLen := ImmGetCompositionStringW(AHIMC, GCS_RESULTSTR, nil, 0);
+      SetLength(NewKey, NewKeyLen div 2);
+      if Length(NewKey)>0 then
+      begin
+        ImmGetCompositionStringW(AHIMC, GCS_RESULTSTR, PWideChar(NewKey), NewKeyLen);
+        ImmSetCompositionStringW(AHIMC, SCS_SETSTR, nil, 0, nil, 0);
+      end else // no IME
+        NewKey := WideChar(OrgCharCode);
+    finally
+      ImmReleaseContext(Window, AHIMC);
+    end;
+  end else
+    NewKey := WideChar(OrgCharCode);
+
+  NewKeyUTF8 := UTF8Encode(NewKey);
+
   // first send a IntfUTF8KeyPress to the LCL
   // if the key was not handled send a CN_CHAR for AnsiChar<=#127
-  OrgCharCode := Word(WParam);
-  if not HandleUnicodeChar(OrgCharCode) then
+  if not HandleUnicodeChar(NewKeyUTF8) then
   begin
     PLMsg := @LMChar;
     with LMChar do
@@ -1249,7 +1271,13 @@ begin
     WinProcess := false;
   end
   else
-    WParam := OrgCharCode;
+  begin
+    NewKey := UTF8Decode(NewKeyUTF8);
+    if NewKey<>'' then
+      WParam := Word(NewKey[1]) // if char is changed in UTF8KeyPress, surrogate pairs are not supported
+    else
+      WParam := 0;
+  end;
 end;
 
 procedure TWindowProcHelper.DoCmdCheckBoxParam;

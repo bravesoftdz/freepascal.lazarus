@@ -1,5 +1,5 @@
 {%MainUnit win32int.pp}
-{ $Id: win32lclintf.inc 51983 2016-03-18 16:45:35Z bart $ }
+{ $Id: win32lclintf.inc 55464 2017-07-08 09:27:03Z juha $ }
 {******************************************************************************
                  All GTK interface communication implementations.
                    Initial Revision  : Sun Nov 23 23:53:53 2003
@@ -612,7 +612,7 @@ var
   SizeRect: TRect;
   Height, Width: Integer;
   FixedHeight, FixedWidth: boolean;
-  MinWidth, MinHeight, MaxWidth, MaxHeight: Integer;
+  //MinWidth, MinHeight, MaxWidth, MaxHeight: Integer;
 begin
   Result := True;
 
@@ -622,11 +622,10 @@ begin
 
     FixedHeight := false;
     FixedWidth := false;
-
-    MinWidth := 0;
-    MinHeight := 0;
-    MaxWidth := 0;
-    MaxHeight := 0;
+    //MinWidth := 0;
+    //MinHeight := 0;
+    //MaxWidth := 0;
+    //MaxHeight := 0;
 
     if SizeConstraints.Control is TCustomComboBox then
     begin

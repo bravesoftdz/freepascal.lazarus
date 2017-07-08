@@ -122,7 +122,8 @@ end;
 function Fpstat(path: pchar; var buf: stat):cint; [public, alias : 'FPC_SYSC_STAT'];
 
 begin
-{$if defined(cpu64)}
+{ standard stat call is 32 bit on sparc64, so explicitly force a stat64 call }
+{$if defined(cpu64) and not(defined(cpusparc64))}
   {$if defined(generic_linux_syscalls)}
     Fpstat:=do_syscall(syscall_nr_fstatat,AT_FDCWD,TSysParam(path),TSysParam(@buf),0);
   {$else}
@@ -339,7 +340,7 @@ function Fpsigaction(sig: cint; new_action, old_action: psigactionrec): cint; [p
   If OldAct is non-nil the previous action is saved there.
 }
 begin
-{$if defined(cpusparc) or defined(cpusparc64) }
+{$if defined(cpusparc) or defined(cpusparc64)}
   { Sparc has an extra stub parameter }
   Fpsigaction:=do_syscall(syscall_nr_rt_sigaction,TSysParam(sig),TSysParam(new_action),TSysParam(old_action),TSysParam(ptruint(@Fprt_sigreturn_stub)-8),TSysParam(8));
 {$else cpusparc}
@@ -390,7 +391,7 @@ end;
 function Fpfstat(fd : cint; var sb : stat): cint;  [public, alias : 'FPC_SYSC_FSTAT'];
 
 begin
-{$if defined(cpu64)}
+{$if defined(cpu64) and not(defined(cpusparc64))}
   {$if defined(generic_linux_syscalls)}
     FpFStat:=do_SysCall(syscall_nr_fstat,TSysParam(fd),TSysParam(@sb));
   {$else}
