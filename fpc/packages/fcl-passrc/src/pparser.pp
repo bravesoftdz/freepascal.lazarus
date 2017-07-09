@@ -76,6 +76,7 @@ const
   nParserExpectedTypeButGot = 2049;
   nParserPropertyArgumentsCanNotHaveDefaultValues = 2050;
   nParserExpectedExternalClassName = 2051;
+  nParserNoConstRangeAllowed = 2052;
 
 // resourcestring patterns of messages
 resourcestring
@@ -130,6 +131,7 @@ resourcestring
   SParserExpectedTypeButGot = 'Expected type, but got %s';
   SParserPropertyArgumentsCanNotHaveDefaultValues = 'Property arguments can not have default values';
   SParserExpectedExternalClassName = 'Expected external class name';
+  SParserNoConstRangeAllowed = 'Const ranges are not allowed';
 
 type
   TPasScopeType = (
@@ -902,7 +904,7 @@ begin
     begin
     // Get token from buffer
     //writeln('TPasParser.NextToken REUSE Start=',FTokenRingStart,' Cur=',FTokenRingCur,' End=',FTokenRingEnd,' Cur=',CurTokenString);
-    FCurToken := P^.Token;
+    FCurToken := Scanner.CheckToken(P^.Token,P^.AsString);
     FCurTokenString := P^.AsString;
     end
   else
@@ -2074,7 +2076,7 @@ begin
   func:=Last;
   
   if Last.Kind<>pekSet then NextToken;
-  if not (Last.Kind in [pekIdent,pekSelf,pekNil]) then
+  if not (Last.Kind in [pekNumber,pekString,pekSet,pekIdent,pekSelf,pekNil]) then
     exit;
 
   ok:=false;
@@ -2891,6 +2893,10 @@ begin
   CurBlock := declNone;
   while True do
   begin
+    if CurBlock=DeclNone then
+      Scanner.SetTokenOption(toOperatorToken)
+    else
+      Scanner.UnSetTokenOption(toOperatorToken);
     NextToken;
   //  writeln('TPasParser.ParseSection Token=',CurTokenString,' ',CurToken, ' ',scanner.CurFilename);
     case CurToken of
@@ -3339,6 +3345,8 @@ begin
     ExpectToken(tkEqual);
     NextToken;
     Result.Expr:=DoParseConstValueExpression(Result);
+    if (Result.VarType=Nil) and (Result.Expr.Kind=pekRange) then
+      ParseExc(nParserNoConstRangeAllowed, SParserNoConstRangeAllowed );
     UngetToken;
     CheckHint(Result,True);
     ok:=true;
@@ -5448,6 +5456,7 @@ begin
         if isClass then
           ParseExc(nParserTypeSyntaxError,SParserTypeSyntaxError);
         isClass:=True;
+        Scanner.SetTokenOption(toOperatorToken);
         end;
       tkProperty:
         begin
@@ -5513,7 +5522,10 @@ begin
       ParseExc(nParserTypeSyntaxError,SParserTypeSyntaxError);
     end;
     If CurToken<>tkClass then
+      begin
       isClass:=False;
+      Scanner.UnSetTokenOption(toOperatorToken);
+      end;
     if CurToken<>AEndToken then
       NextToken;
     end;
