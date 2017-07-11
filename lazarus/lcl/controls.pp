@@ -1,4 +1,4 @@
-{  $Id: controls.pp 55438 2017-07-04 12:19:04Z wp $  }
+{  $Id: controls.pp 55479 2017-07-10 12:20:03Z mattias $  }
 {
  /***************************************************************************
                                Controls.pp
@@ -554,7 +554,7 @@ var
 
 type
   { TDockManager is an abstract class for managing a dock site's docked
-    controls. See TDockTree below for the more info.
+    controls. See TDockTree below for more info.
     }
   TDockManager = class(TPersistent)
   public
