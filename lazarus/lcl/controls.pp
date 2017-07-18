@@ -1,4 +1,4 @@
-{  $Id: controls.pp 55479 2017-07-10 12:20:03Z mattias $  }
+{  $Id: controls.pp 55520 2017-07-17 18:11:59Z mattias $  }
 {
  /***************************************************************************
                                Controls.pp
@@ -4527,6 +4527,9 @@ initialization
   RegisterPropertyToSkip(TControl, 'ExplicitHeight',   'VCL compatibility property', '');
   RegisterPropertyToSkip(TControl, 'ExplicitTop',      'VCL compatibility property', '');
   RegisterPropertyToSkip(TControl, 'ExplicitWidth',    'VCL compatibility property', '');
+  {$IF FPC_FULLVERSION<30003}
+  RegisterPropertyToSkip(TDataModule, 'PPI',    'PPI was introduced in FPC 3.0.3', '');
+  {$ENDIF}
   Mouse := TMouse.Create;
   DefaultDockManagerClass := TDockTree;
   DragManager := TDragManagerDefault.Create(nil);
