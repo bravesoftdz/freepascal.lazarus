@@ -1,10 +1,10 @@
-{ $Id: callstackdlg.pp 55039 2017-05-22 07:52:37Z ondrej $ }
+{ $Id: callstackdlg.pp 55545 2017-07-20 13:56:50Z juha $ }
 {               ----------------------------------------------  
                  callstackdlg.pp  -  Overview of the callstack 
                 ---------------------------------------------- 
  
  @created(Sun Apr 28th WET 2002)
- @lastmod($Date: 2017-05-22 03:52:37 -0400 (Mon, 22 May 2017) $)
+ @lastmod($Date: 2017-07-20 09:56:50 -0400 (Thu, 20 Jul 2017) $)
  @author(Marc Weustink <marc@@dommelstein.net>)                       
 
  This unit contains the Call Stack debugger dialog.
@@ -248,7 +248,7 @@ function TCallStackDlg.GetImageIndex(Entry: TIdeCallStackEntry): Integer;
   begin
     Result := nil;
     if BreakPoints = nil then Exit;
-    if DebugBoss.GetFullFilename(Entry.UnitInfo, FileName, False, False)
+    if DebugBoss.GetFullFilename(Entry.UnitInfo, FileName, False)
     then Result := BreakPoints.Find(FileName, Entry.Line);
   end;
 
@@ -289,7 +289,6 @@ begin
   try DebugLnEnter(DBG_DATA_MONITORS, ['DebugDataWindow: >>ENTER: TCallStackDlg.UpdateView']);
   Exclude(FUpdateFlags, ufNeedUpdating);
 
-
   BeginUpdate;
   lvCallStack.BeginUpdate;
   try
@@ -305,7 +304,6 @@ begin
     FInUpdateView := False;
     // TODO: must make CStack ref-counted
     if CStack <> GetSelectedCallstack then exit; // Something changed, maybe debugger stopped
-
 
     if (CStack = nil) or ((Snap <> nil) and (CStack.CountLimited(MaxCnt) = 0)) then begin
       lvCallStack.Items.Clear;
@@ -323,7 +321,6 @@ begin
       lvCallStack.Items.Clear;
       exit;
     end;
-
 
     if Snap <> nil then begin
       First := 0;
@@ -546,7 +543,7 @@ begin
       if idx >= GetSelectedCallstack.CountLimited(idx+1) then Exit;
       Entry := GetSelectedCallstack.Entries[idx];
       if Entry.Line <= 0 then exit;
-      if not DebugBoss.GetFullFilename(Entry.UnitInfo, FileName, False, False) then
+      if not DebugBoss.GetFullFilename(Entry.UnitInfo, FileName, False) then
         Exit;
       BreakPoint := BreakPoints.Find(FileName, Entry.Line);
       if BreakPoint <> nil then begin

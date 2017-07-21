@@ -1,4 +1,4 @@
-{ $Id: qtwscomctrls.pp 55211 2017-06-04 15:14:29Z juha $}
+{ $Id: qtwscomctrls.pp 55554 2017-07-21 09:08:43Z zeljko $}
 {
  *****************************************************************************
  *                              QtWSComCtrls.pp                              *
@@ -1548,11 +1548,15 @@ begin
     QtListWidget := TQtListWidget(ALV.Handle);
     LWI := QtListWidget.getItem(AIndex);
     QtListWidget.setItemVisible(LWI, True);
+    if not PartialOK then
+      QtListWidget.scrollToItem(AIndex, QAbstractItemViewEnsureVisible);
   end else
   begin
     QtTreeWidget := TQtTreeWidget(ALV.Handle);
     TWI := QtTreeWidget.topLevelItem(AIndex);
     QtTreeWidget.setItemVisible(TWI, True);
+    if not PartialOK then
+      QtTreeWidget.scrollToItem(TWI, QAbstractItemViewEnsureVisible);
   end;
 end;
 

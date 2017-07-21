@@ -1,11 +1,11 @@
-{ $Id: debuggerdlg.pp 55155 2017-06-02 10:05:32Z juha $ }
+{ $Id: debuggerdlg.pp 55545 2017-07-20 13:56:50Z juha $ }
 {                    ----------------------------------------
                        DebuggerDlg.pp  -  Base class for all
                          debugger related forms
                      ----------------------------------------
 
  @created(Wed Mar 16st WET 2001)
- @lastmod($Date: 2017-06-02 06:05:32 -0400 (Fri, 02 Jun 2017) $)
+ @lastmod($Date: 2017-07-20 09:56:50 -0400 (Thu, 20 Jul 2017) $)
  @author(Marc Weustink <marc@@dommelstein.net>)
 
  This unit contains the base class for all debugger related dialogs.
@@ -351,10 +351,12 @@ begin
 end;
 
 procedure TDebuggerDlg.JumpToUnitSource(AnUnitInfo: TDebuggerUnitInfo; ALine: Integer);
+const
+  JmpFlags: TJumpToCodePosFlags =
+    [jfAddJumpPoint, jfFocusEditor, jfMarkLine, jfMapLineFromDebug, jfSearchVirtualFullPath];
 var
   Filename: String;
   ok: Boolean;
-  JumpFlags: TJumpToCodePosFlags;
 begin
   if AnUnitInfo = nil then exit;
   debugln(DBG_LOCATION_INFO, ['JumpToUnitSource AnUnitInfo=', AnUnitInfo.DebugText ]);
@@ -364,20 +366,16 @@ begin
   (* Maybe trim the filename here and use jfDoNotExpandFilename
      ExpandFilename works with the current IDE path, and may be wrong
   *)
-  // TODO: better detcion of unsaved project files
-    if DebugBoss.GetFullFilename(AnUnitInfo, Filename, False, False) then begin
-      debugln(DBG_LOCATION_INFO, ['JumpToUnitSource Filename=', Filename]);
+  // TODO: better detection of unsaved project files
+    if DebugBoss.GetFullFilename(AnUnitInfo, Filename, False) then
+    begin
       ok := false;
-      JumpFlags := [jfAddJumpPoint, jfFocusEditor, jfMarkLine, jfMapLineFromDebug, jfSearchVirtualFullPath];
       if ALine <= 0 then
         ALine := AnUnitInfo.SrcLine;
       if FilenameIsAbsolute(Filename) then
-        ok := MainIDEInterface.DoJumpToSourcePosition(Filename, 0, ALine, 0, JumpFlags) = mrOK;
+        ok := MainIDEInterface.DoJumpToSourcePosition(Filename, 0, ALine, 0, JmpFlags) = mrOK;
       if not ok then
-      begin
-        DebugBoss.GetFullFilename(AnUnitInfo, Filename, True, True);
-        MainIDEInterface.DoJumpToSourcePosition(Filename, 0, ALine, 0, JumpFlags+[jfDoNotExpandFilename]);
-      end;
+        MainIDEInterface.DoJumpToSourcePosition(Filename, 0, ALine, 0, JmpFlags+[jfDoNotExpandFilename]);
     end;
   finally
     DebugBoss.UnLockCommandProcessing;

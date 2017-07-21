@@ -1,4 +1,4 @@
-{  $Id: basedebugmanager.pas 54572 2017-04-08 09:22:51Z juha $  }
+{  $Id: basedebugmanager.pas 55545 2017-07-20 13:56:50Z juha $  }
 {
  /***************************************************************************
                          basedebugmanager.pp
@@ -176,7 +176,7 @@ type
     function Modify(const AExpression: String; const ANewValue: String): Boolean; virtual; abstract; // Modify the given expression, returns true if valid
 
     function GetFullFilename(const AUnitinfo: TDebuggerUnitInfo;
-                             out Filename: string; AskUserIfNotFound: Boolean; UseFullName: Boolean): Boolean; virtual; abstract;
+                             out Filename: string; AskUserIfNotFound: Boolean): Boolean; virtual; abstract;
     function GetFullFilename(var Filename: string; AskUserIfNotFound: Boolean): Boolean; virtual; abstract;
 
     procedure EvaluateModify(const AExpression: String); virtual; abstract;
