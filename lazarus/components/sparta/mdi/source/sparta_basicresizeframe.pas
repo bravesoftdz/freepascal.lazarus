@@ -30,6 +30,7 @@ type
     pMarginT: TPanel;
     pR: TPanel;
     pT: TPanel;
+    procedure pBGPaint(Sender: TObject);
     procedure pFakeMenuPaint(Sender: TObject);
     procedure sbVerticalScroll(Sender: TObject; ScrollCode: TScrollCode;
       var ScrollPos: Integer);
@@ -206,6 +207,11 @@ begin
       LCanvas.TextOut(X, Y, Menu.Items[I].Caption);
       Inc(X, LCanvas.TextWidth(Menu.Items[I].Caption) + 10);
     end;
+end;
+
+procedure TBasicResizeFrame.pBGPaint(Sender: TObject);
+begin
+  pBG.Visible := False;
 end;
 
 procedure TBasicResizeFrame.sbVerticalScroll(Sender: TObject;
@@ -389,9 +395,10 @@ begin
       FNodes.Add(Panel);
 
       case Node of
-        {0,}4: Cursor := crSizeNWSE;
+        // on mac there is no cursor for crNWSE ( https://bugs.freepascal.org/view.php?id=32194#c101876 )
+        {0,}4: Cursor := {$IFDEF MACOS}crSizeAll{$ELSE}crSizeNWSE{$ENDIF};
         {1,}5: Cursor := crSizeNS;
-        //{2,}6: Cursor := crSizeNESW;
+        //{2,}6: Cursor := $IFDEF MACOS}crSizeAll{$ELSE}crSizeNESW{$ENDIF};
         3{,7}: Cursor := crSizeWE;
       end;
       if Node in [3,4,5] then
@@ -663,6 +670,7 @@ var
 begin
   Result := False;
   if  (FDesignedForm<>nil) and (FDesignedForm.Form.Menu<>nil)
+  and not (csDestroying in FDesignedForm.Form.Menu.ComponentState)
   and (FDesignedForm.Form.Menu.Items.Count>0)
   then
     for I := 0 to FDesignedForm.Form.Menu.Items.Count-1 do
@@ -837,10 +845,13 @@ procedure TBasicResizeFrame.BeginFormSizeUpdate(Sender: TObject);
 begin
   FLastDesignedWidthToScroll:=DesignedWidthToScroll;
   FLastDesignedHeightToScroll:=DesignedHeightToScroll;
+  pBG.OnPaint := nil;
+  pBG.Visible := True;
 end;
 
 procedure TBasicResizeFrame.EndFormSizeUpdate(Sender: TObject);
 begin
+  pBG.OnPaint := pBGPaint;
 end;
 
 function TBasicResizeFrame.GetFrame: TCustomFrame;
