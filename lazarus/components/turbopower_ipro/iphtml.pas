@@ -2,7 +2,7 @@
 {*     IPHTML.PAS - HTML Browser and associated classes           *}
 {******************************************************************}
 
-{ $Id: iphtml.pas 55563 2017-07-23 16:47:30Z wp $ }
+{ $Id: iphtml.pas 55592 2017-07-25 17:24:04Z wp $ }
 
 (* ***** BEGIN LICENSE BLOCK *****
  * Version: MPL 1.1
@@ -10246,7 +10246,7 @@ begin
     Props.FontStyle := Props.FontStyle + [fsUnderline];
   end else
     if HasRef then begin
-      Props.FontStyle := Props.FontStyle + [fsUnderline];
+      Props.FontStyle := Props.FontStyle - [fsUnderline];
       if Owner.LinkVisited(HRef) then
         Props.FontColor := Props.VLinkColor
       else
