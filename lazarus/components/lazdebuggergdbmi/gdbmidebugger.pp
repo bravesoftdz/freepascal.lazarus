@@ -1,10 +1,10 @@
-{ $Id: gdbmidebugger.pp 55172 2017-06-02 20:44:47Z mattias $ }
+{ $Id: gdbmidebugger.pp 55607 2017-07-30 20:19:27Z martin $ }
 {                        ----------------------------------------------
                          GDBDebugger.pp  -  Debugger class forGDB
                          ----------------------------------------------
 
  @created(Wed Feb 23rd WET 2002)
- @lastmod($Date: 2017-06-02 16:44:47 -0400 (Fri, 02 Jun 2017) $)
+ @lastmod($Date: 2017-07-30 16:19:27 -0400 (Sun, 30 Jul 2017) $)
  @author(Marc Weustink <marc@@lazarus.dommelstein.net>)
 
  This unit contains debugger class for the GDB/MI debugger.
@@ -2660,7 +2660,13 @@ var
 var
   S: String;
   idx: Integer;
+  {$IFDEF DBG_ASYNC_WAIT}
+  GotPrompt: integer;
+  {$ENDIF}
 begin
+  {$IFDEF DBG_ASYNC_WAIT}
+  GotPrompt := 0;
+  {$ENDIF}
   Result := True;
   AResult.State := dsNone;
   InLogWarning := False;
@@ -2672,17 +2678,40 @@ begin
     if ATimeOut > 0 then begin
       S := FTheDebugger.ReadLine(ATimeOut);
       if FTheDebugger.ReadLineTimedOut then begin
+        {$IFDEF DBG_ASYNC_WAIT}
+        if GotPrompt = 0 then begin
+        {$ENDIF}
         FProcessResultTimedOut := True;
         break;
+        {$IFDEF DBG_ASYNC_WAIT}
+        end;
+        {$ENDIF}
       end;
     end
     else
       S := FTheDebugger.ReadLine(50);
 
+    {$IFDEF DBG_ASYNC_WAIT}
+    if GotPrompt > 0 then begin
+      inc(GotPrompt);
+      if (GotPrompt > 15) or FGotStopped or FDidKillNow then break;
+      if (GotPrompt > 5) and (S = '') then break;
+    end;
+    {$ENDIF}
+
     if (S = '(gdb) ') or
        ( (S = '') and FDidKillNow )
     then
+      {$IFDEF DBG_ASYNC_WAIT}
+      begin
+        if (not FGotStopped) and (not FDidKillNow) and (GotPrompt = 0) then
+          GotPrompt := 1
+        else
+          break;
+      end;
+      {$ELSE}
       Break;
+      {$ENDIF}
 
     while S <> '' do
     begin

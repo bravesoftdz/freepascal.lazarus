@@ -27,7 +27,7 @@ replace them with the notice and other provisions required by the GPL.
 If you do not delete the provisions above, a recipient may use your version
 of this file under either the MPL or the GPL.
 
-$Id: synedittextbuffer.pp 52761 2016-07-31 23:14:11Z martin $
+$Id: synedittextbuffer.pp 55604 2017-07-30 16:37:07Z martin $
 
 You may retrieve the latest version of this file at the SynEdit home page,
 located at http://SynEdit.SourceForge.net
@@ -205,6 +205,11 @@ type
     function  LogicPosIsCombining(const AChar: PChar): Boolean; inline;
 
     function GetDisplayView: TLazSynDisplayView; override;
+
+    procedure AddGenericHandler(AReason: TSynEditNotifyReason;
+                AHandler: TMethod); override;
+    procedure RemoveGenericHandler(AReason: TSynEditNotifyReason;
+                AHandler: TMethod); override;
   public
     constructor Create;
     destructor Destroy; override;
@@ -219,10 +224,6 @@ type
     function  GetPChar(ALineIndex: Integer; out ALen: Integer): PChar; override; // experimental
     procedure MarkModified(AFirst, ALast: Integer);
     procedure MarkSaved;
-    procedure AddGenericHandler(AReason: TSynEditNotifyReason;
-                AHandler: TMethod); override;
-    procedure RemoveGenericHandler(AReason: TSynEditNotifyReason;
-                AHandler: TMethod); override;
     procedure SendNotification(AReason: TSynEditNotifyReason;
                 ASender: TSynEditStrings; aIndex, aCount: Integer); override;
     procedure SendNotification(AReason: TSynEditNotifyReason;
