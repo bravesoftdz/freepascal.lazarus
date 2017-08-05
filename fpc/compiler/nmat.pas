@@ -493,6 +493,7 @@ implementation
         power,shiftval : longint;
         statements : tstatementnode;
         temp,resulttemp : ttempcreatenode;
+        masknode : tnode;
       begin
         result := nil;
         { divide/mod a number by a constant which is a power of 2? }
@@ -502,7 +503,7 @@ implementation
           { for 64 bit, we leave the optimization to the cg }
             (not is_signed(resultdef)) then
 {$else cpu64bitalu}
-           (((nodetype=divn) and is_64bit(resultdef)) or
+           (((nodetype=divn) and is_oversizedord(resultdef)) or
             (nodetype=modn) or
             not is_signed(resultdef)) then
 {$endif cpu64bitalu}
@@ -530,18 +531,30 @@ implementation
                      left));
                     left:=nil;
 
+                    { masknode is (sar(temp,shiftval) and ((1 shl power)-1))
+                      for power=1 (i.e. division by 2), masknode is simply (temp shr shiftval)}
+                    if power=1 then
+                      masknode:=
+                        cshlshrnode.create(shrn,
+                          ctemprefnode.create(temp),
+                          cordconstnode.create(shiftval,u8inttype,false)
+                        )
+                    else
+                      masknode:=
+                        caddnode.create(andn,
+                          cinlinenode.create(in_sar_x_y,false,
+                            ccallparanode.create(cordconstnode.create(shiftval,u8inttype,false),
+                            ccallparanode.create(ctemprefnode.create(temp),nil))
+                          ),
+                          cordconstnode.create(tcgint((qword(1) shl power)-1),
+                            right.resultdef,false)
+                        );
+
                     addstatement(statements,cassignmentnode.create(ctemprefnode.create(resulttemp),
                       cinlinenode.create(in_sar_x_y,false,
                         ccallparanode.create(cordconstnode.create(power,u8inttype,false),
                         ccallparanode.create(caddnode.create(addn,ctemprefnode.create(temp),
-                          caddnode.create(andn,
-                            cinlinenode.create(in_sar_x_y,false,
-                              ccallparanode.create(cordconstnode.create(shiftval,u8inttype,false),
-                              ccallparanode.create(ctemprefnode.create(temp),nil))
-                            ),
-                            cordconstnode.create(tordconstnode(right).value-1,
-                              right.resultdef,false)
-                          )),nil
+                          masknode),nil
                         ))))
                     );
                     addstatement(statements,ctempdeletenode.create(temp));
@@ -569,28 +582,33 @@ implementation
                 addstatement(statements,resulttemp);
                 addstatement(statements,temp);
                 addstatement(statements,cassignmentnode.create(ctemprefnode.create(temp),left));
-                { sign:=sar(left,sizeof(left)*8-1); }
-                addstatement(statements,cassignmentnode.create(ctemprefnode.create(resulttemp),
-                  cinlinenode.create(in_sar_x_y,false,
-                    ccallparanode.create(cordconstnode.create(shiftval,u8inttype,false),
-                    ccallparanode.create(ctemprefnode.create(temp),nil)
-                  )
-                )));
+                { mask:=sar(left,sizeof(left)*8-1) and ((1 shl power)-1); }
+                if power=1 then
+                  masknode:=
+                    cshlshrnode.create(shrn,
+                      ctemprefnode.create(temp),
+                      cordconstnode.create(shiftval,u8inttype,false)
+                    )
+                else
+                  masknode:=
+                    caddnode.create(andn,
+                      cinlinenode.create(in_sar_x_y,false,
+                        ccallparanode.create(cordconstnode.create(shiftval,u8inttype,false),
+                        ccallparanode.create(ctemprefnode.create(temp),nil))
+                      ),
+                      cordconstnode.create(tcgint((qword(1) shl power)-1),
+                        right.resultdef,false)
+                    );
+                addstatement(statements,cassignmentnode.create(ctemprefnode.create(resulttemp),masknode));
 
-                { result:=((((left xor sign)-sign) and right) xor sign)-sign; }
+                { result:=((left+mask) and right)-mask; }
                 addstatement(statements,cassignmentnode.create(ctemprefnode.create(resulttemp),
                   caddnode.create(subn,
-                    caddnode.create(xorn,
-                      caddnode.create(andn,
-                        right,
-                        caddnode.create(subn,
-                          caddnode.create(xorn,
-                            ctemprefnode.create(resulttemp),
-                            ctemprefnode.create(temp)),
-                          ctemprefnode.create(resulttemp))
-                        ),
-                      ctemprefnode.create(resulttemp)
-                    ),
+                    caddnode.create(andn,
+                      right,
+                      caddnode.create(addn,
+                        ctemprefnode.create(temp),
+                        ctemprefnode.create(resulttemp))),
                   ctemprefnode.create(resulttemp))
                 ));
 
