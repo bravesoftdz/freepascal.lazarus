@@ -1,4 +1,4 @@
-{ $Id: grids.pas 55495 2017-07-13 08:57:10Z wp $}
+{ $Id: grids.pas 55640 2017-08-06 22:40:30Z wp $}
 {
  /***************************************************************************
                                Grids.pas
@@ -1154,7 +1154,7 @@ type
     property AutoFillColumns: boolean read FAutoFillColumns write SetAutoFillColumns default false;
     property BorderStyle:TBorderStyle read FGridBorderStyle write SetBorderStyle default bsSingle;
     property BorderColor: TColor read FBorderColor write SetBorderColor default cl3DDKShadow;
-    property CellHintPriority: TCellHintPriority read FCellHintPriority write FCellHintPriority default chpTruncOnly;
+    property CellHintPriority: TCellHintPriority read FCellHintPriority write FCellHintPriority default chpAllNoDefault;
     property Col: Integer read FCol write SetCol;
     property ColCount: Integer read GetColCount write SetColCount default 5;
     property ColRow: TPoint read GetQuickColRow write SetQuickColRow;
@@ -1508,6 +1508,7 @@ type
     //property BiDiMode;
     property BorderSpacing;
     property BorderStyle;
+//    property CellHintPriority;
     property Color;
     property ColCount;
     property ColumnClickSorts;
@@ -3962,9 +3963,13 @@ begin
       begin
         AddToHint(txt, txt1);
         AddToHint(txt, txt2);
-        if txt <> '' then begin
-          txt := GetShortHint(FSavedHint) + LineEnding + txt;
-          AppHint := GetLongHint(FSavedHint) + LineEnding + txt;
+        if (txt <> '') then begin
+          if FSavedHint = '' then
+            AppHint := txt
+          else begin
+            txt := GetShortHint(FSavedHint) + LineEnding + txt;
+            AppHint := GetLongHint(FSavedHint) + LineEnding + txt;
+          end;
         end else
         begin
           txt := GetShortHint(FSavedHint);
@@ -9397,7 +9402,7 @@ begin
   FDefaultTextStyle.Wordbreak := False;
   FDefaultTextStyle.SingleLine:= True;
 
-  FCellHintPriority := chpTruncOnly;
+  FCellHintPriority := chpAllNoDefault;
 
   FButtonEditor := TButtonCellEditor.Create(nil);
   FButtonEditor.Name:='ButtonEditor';
