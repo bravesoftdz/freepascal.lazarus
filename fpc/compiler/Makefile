@@ -572,6 +572,10 @@ endif
 ifeq ($(OS_TARGET),win16)
 NoNativeBinaries=1
 endif
+ifeq ($(NoNativeBinaries),1)
+override EXEEXT=$(SRCEXEEXT)
+CROSSINSTALL=1
+endif
 ifeq ($(FULL_TARGET),i386-linux)
 override TARGET_DIRS+=utils
 endif
