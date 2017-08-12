@@ -28,8 +28,10 @@ type
 
 {$MINENUMSIZE DEFAULT}
 
+(*
 procedure InitializeArray(p, typeInfo: Pointer; count: SizeInt);
 procedure FinalizeArray(p, typeInfo: Pointer; count: SizeInt);
 procedure CopyArray(dest, source, typeInfo: Pointer; count: SizeInt);
+*)
 
 
