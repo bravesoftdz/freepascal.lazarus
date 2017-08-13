@@ -2103,6 +2103,7 @@ procedure pd_syscall(pd:tabstractprocdef);
         syscall: psyscallinfo;
       begin
         case target_info.system of
+          system_m68k_palmos,
           system_m68k_atari,
           system_m68k_amiga,
           system_powerpc_amiga:
@@ -2178,6 +2179,24 @@ begin
   tprocdef(pd).forwarddef:=false;
 {$if defined(powerpc) or defined(m68k) or defined(i386) or defined(x86_64) or defined(arm)}
   include_po_syscall;
+
+  if target_info.system = system_m68k_palmos then
+    begin
+      v:=get_intconst;
+      tprocdef(pd).extnumber:=longint(v.svalue);
+      if ((v<0) or (v>high(word))) then
+        message(parser_e_range_check_error);
+
+      if try_to_consume(_COMMA) then
+        begin
+          v:=get_intconst;
+          if ((v<0) or (v>high(word))) then
+            message(parser_e_range_check_error);
+          tprocdef(pd).import_nr:=longint(v.svalue);
+          include(pd.procoptions,po_syscall_has_importnr);
+        end;
+      exit;
+    end;
 
   if target_info.system = system_m68k_atari then
     begin

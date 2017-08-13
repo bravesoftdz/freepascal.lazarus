@@ -275,9 +275,7 @@ interface
                 internalerror(2011122701);
               hs:=o.ref^.symbol.name;
               ReplaceForbiddenChars(hs);
-              if o.ref^.symbol.bind=AB_EXTERNAL then
-                hs:=hs+'[TC]';
-              hs:=hs+'(RTOC)';
+              hs:=hs+'[TC](RTOC)';
               getopstr:=hs;
             end
           else
@@ -1098,9 +1096,9 @@ interface
         replaced: boolean;
 
       begin
-        if tasmsymbol(p).bind=AB_EXTERNAL then
+        if tasmsymbol(p).bind in [AB_EXTERNAL,AB_EXTERNAL_INDIRECT] then
           begin
-            //Writeln('ZZZ ',p.name,' ',p.classname,' ',Ord(tasmsymbol(p).typ));
+            //Writeln('ZZZ ',p.name,' ',p.typ);
             s:= p.name;
             replaced:= ReplaceForbiddenChars(s);
 
