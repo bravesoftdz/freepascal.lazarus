@@ -519,17 +519,25 @@ type
     fDisabledAutosizing: TFPList; // list of TControl
     fTreeNameToDocker: TADNameToControl; // TAnchorDockHostSite, TAnchorDockSplitter or custom docksite
     fPopupMenu: TPopupMenu;
+    // Used by RestoreLayout:
+    WorkArea, SrcWorkArea: TRect;
+
     function GetControls(Index: integer): TControl;
     function GetLocalizedHeaderHint: string;
     function CloseUnneededControls(Tree: TAnchorDockLayoutTree): boolean;
     function CreateNeededControls(Tree: TAnchorDockLayoutTree;
                 DisableAutoSizing: boolean; ControlNames: TStrings): boolean;
+    function GetNodeSite(Node: TAnchorDockLayoutTreeNode): TAnchorDockHostSite;
     procedure MapTreeToControls(Tree: TAnchorDockLayoutTree);
     function RestoreLayout(Tree: TAnchorDockLayoutTree; Scale: boolean): boolean;
     procedure EnableAllAutoSizing;
     procedure ClearLayoutProperties(AControl: TControl; NewAlign: TAlign = alClient);
     procedure PopupMenuPopup(Sender: TObject);
     procedure ChangeLockButtonClick(Sender: TObject);
+    function ScaleChildX(p: integer): integer;
+    function ScaleChildY(p: integer): integer;
+    function ScaleTopLvlX(p: integer): integer;
+    function ScaleTopLvlY(p: integer): integer;
     procedure SetAllowDragging(AValue: boolean);
     procedure SetDockOutsideMargin(AValue: integer);
     procedure SetDockParentMargin(AValue: integer);
@@ -543,6 +551,8 @@ type
     procedure SetHeaderFilled(AValue: boolean);
 
     procedure SetShowMenuItemShowHeader(AValue: boolean);
+    procedure SetupSite(Site: TWinControl; ANode: TAnchorDockLayoutTreeNode;
+      AParent: TWinControl);
     procedure ShowHeadersButtonClick(Sender: TObject);
     procedure OptionsClick(Sender: TObject);
     procedure SetIdleConnected(const AValue: Boolean);
@@ -554,8 +564,7 @@ type
     procedure AutoSizeAllHeaders(EnableAutoSizing: boolean);
     procedure DisableControlAutoSizing(AControl: TControl);
     procedure InvalidateHeaders;
-    procedure Notification(AComponent: TComponent; Operation: TOperation);
-          override;
+    procedure Notification(AComponent: TComponent; Operation: TOperation); override;
     procedure SetHeaderAlignLeft(const AValue: integer);
     procedure SetHeaderAlignTop(const AValue: integer);
     procedure SetShowHeader(AValue: boolean);
@@ -592,7 +601,7 @@ type
     procedure MakeDockSite(AForm: TCustomForm; Sites: TAnchors;
                            ResizePolicy: TADMResizePolicy;
                            AllowInside: boolean = false);
-    procedure MakeDockPanel(APanel:TAnchorDockPanel;
+    procedure MakeDockPanel(APanel: TAnchorDockPanel;
                             ResizePolicy: TADMResizePolicy);
     procedure MakeVisible(AControl: TControl; SwitchPages: boolean);
     function ShowControl(ControlName: string; BringToFront: boolean = false): TControl;
@@ -601,7 +610,7 @@ type
     // save/restore layouts
     procedure SaveLayoutToConfig(Config: TConfigStorage);
     procedure SaveMainLayoutToTree(LayoutTree: TAnchorDockLayoutTree);
-    procedure SaveSiteLayoutToTree(AForm: TCustomForm;
+    procedure SaveSiteLayoutToTree(AControl: TWinControl;
                                    LayoutTree: TAnchorDockLayoutTree);
     function CreateRestoreLayout(AControl: TControl): TAnchorDockRestoreLayout;
     function ConfigIsEmpty(Config: TConfigStorage): boolean;
@@ -1590,8 +1599,7 @@ procedure TAnchorDockMaster.MapTreeToControls(Tree: TAnchorDockLayoutTree);
   //    the SiteA. This way the corresponding root forms are kept which reduces
   //    flickering.
 
-    function FindMappedControl(ChildNode: TAnchorDockLayoutTreeNode
-      ): TCustomForm;
+    function FindMappedControl(ChildNode: TAnchorDockLayoutTreeNode): TCustomForm;
     var
       i: Integer;
     begin
@@ -1715,142 +1723,143 @@ begin
   MapSplitters(Tree.Root);
 end;
 
+function SrcRectValid(const r: TRect): boolean;
+begin
+  Result:=(r.Left<r.Right) and (r.Top<r.Bottom);
+end;
+
+function TAnchorDockMaster.ScaleTopLvlX(p: integer): integer;
+begin
+  Result:=p;
+  if SrcRectValid(SrcWorkArea) and SrcRectValid(WorkArea) then
+    Result:=((p-SrcWorkArea.Left)*(WorkArea.Right-WorkArea.Left))
+              div (SrcWorkArea.Right-SrcWorkArea.Left)
+            +WorkArea.Left;
+end;
+
+function TAnchorDockMaster.ScaleTopLvlY(p: integer): integer;
+begin
+  Result:=p;
+  if SrcRectValid(SrcWorkArea) and SrcRectValid(WorkArea) then
+    Result:=((p-SrcWorkArea.Top)*(WorkArea.Bottom-WorkArea.Top))
+                 div (SrcWorkArea.Bottom-SrcWorkArea.Top)
+            +WorkArea.Top;
+end;
+
+function TAnchorDockMaster.ScaleChildX(p: integer): integer;
+begin
+  Result:=p;
+  if SrcRectValid(SrcWorkArea) and SrcRectValid(WorkArea) then
+    Result:=p*(WorkArea.Right-WorkArea.Left)
+              div (SrcWorkArea.Right-SrcWorkArea.Left);
+end;
+
+function TAnchorDockMaster.ScaleChildY(p: integer): integer;
+begin
+  Result:=p;
+  if SrcRectValid(SrcWorkArea) and SrcRectValid(WorkArea) then
+    Result:=p*(WorkArea.Bottom-WorkArea.Top)
+              div (SrcWorkArea.Bottom-SrcWorkArea.Top);
+end;
+
+procedure TAnchorDockMaster.SetupSite(Site: TWinControl;
+  ANode: TAnchorDockLayoutTreeNode; AParent: TWinControl);
+var
+  aManager: TAnchorDockManager;
+  NewBounds: TRect;
+  aMonitor: TMonitor;
+  aHostSite: TAnchorDockHostSite;
+begin
+  if Site is TAnchorDockPanel then
+    GetParentForm(Site).BoundsRect:=ANode.BoundsRect
+  else begin
+    if AParent=nil then begin
+      if (ANode.Monitor>=0) and (ANode.Monitor<Screen.MonitorCount) then
+        aMonitor:=Screen.Monitors[ANode.Monitor]
+      else begin
+        if Site is TCustomForm then
+          aMonitor:=TCustomForm(Site).Monitor
+        else
+          aMonitor:=GetParentForm(Site).Monitor;
+      end;
+      WorkArea:=aMonitor.WorkareaRect;
+      {$IFDEF VerboseAnchorDockRestore}
+      debugln(['TAnchorDockMaster.RestoreLayout.SetupSite WorkArea=',dbgs(WorkArea)]);
+      {$ENDIF}
+    end;
+  end;
+  if IsCustomSite(Site) then begin
+    aManager:=TAnchorDockManager(Site.DockManager);
+    if ANode.Count>0 then begin
+      // this custom dock site gets a child => store and clear constraints
+      aManager.StoreConstraints;
+    end;
+  end;
+  Site.Constraints.MaxWidth:=0;
+  Site.Constraints.MaxHeight:=0;
+  NewBounds:=ANode.BoundsRect;
+  if AParent=nil then begin
+    NewBounds:=Rect(ScaleTopLvlX(NewBounds.Left),ScaleTopLvlY(NewBounds.Top),
+                    ScaleTopLvlX(NewBounds.Right),ScaleTopLvlY(NewBounds.Bottom));
+  end else begin
+    if AParent is TAnchorDockPanel then
+    begin
+      NewBounds:=Rect(0,0,AParent.ClientWidth,AParent.ClientHeight);
+      Site.Align:=alClient;
+    end
+    else
+      NewBounds:=Rect(ScaleChildX(NewBounds.Left), ScaleChildY(NewBounds.Top),
+                      ScaleChildX(NewBounds.Right),ScaleChildY(NewBounds.Bottom));
+  end;
+  {$IFDEF VerboseAnchorDockRestore}
+  if Scale then
+    debugln(['TAnchorDockMaster.RestoreLayout.SetupSite scale Site=',DbgSName(Site),' Caption="',Site.Caption,'" OldWorkArea=',dbgs(SrcWorkArea),' CurWorkArea=',dbgs(WorkArea),' OldBounds=',dbgs(Node.BoundsRect),' NewBounds=',dbgs(NewBounds)]);
+  {$ENDIF}
+  Site.BoundsRect:=NewBounds;
+  Site.Visible:=true;
+  if not (Site is TAnchorDockPanel) then
+    Site.Parent:=AParent;
+  if IsCustomSite(AParent) then begin
+    aManager:=TAnchorDockManager(AParent.DockManager);
+    Site.Align:=ANode.Align;
+    {$IFDEF VerboseAnchorDockRestore}
+    debugln(['TAnchorDockMaster.RestoreLayout.SetupSite custom Site=',DbgSName(Site),' Site.Bounds=',dbgs(Site.BoundsRect),' BoundSplitterPos=',Node.BoundSplitterPos]);
+    {$ENDIF}
+    aManager.RestoreSite(ANode.BoundSplitterPos);
+    Site.HostDockSite:=AParent;
+  end;
+  if Site is TAnchorDockHostSite then begin
+    aHostSite:=TAnchorDockHostSite(Site);
+    aHostSite.Header.HeaderPosition:=ANode.HeaderPosition;
+    aHostSite.DockRestoreBounds:=NewBounds;
+    if (ANode.NodeType<>adltnPages) and (aHostSite.Pages<>nil) then
+      aHostSite.FreePages;
+  end;
+  if Site is TCustomForm then
+    if AParent=nil then
+      TCustomForm(Site).WindowState:=ANode.WindowState
+    else
+      TCustomForm(Site).WindowState:=wsNormal;
+end;
+
+function TAnchorDockMaster.GetNodeSite(Node: TAnchorDockLayoutTreeNode): TAnchorDockHostSite;
+var
+  Site: TControl;
+begin
+  Site:=fTreeNameToDocker[Node.Name];
+  if Site is TAnchorDockHostSite then
+    exit(TAnchorDockHostSite(Site));
+  if Site<>nil then
+    exit(nil);
+  Result:=CreateSite;
+  fDisabledAutosizing.Add(Result);
+  fTreeNameToDocker[Node.Name]:=Result;
+end;
+
 function TAnchorDockMaster.RestoreLayout(Tree: TAnchorDockLayoutTree;
   Scale: boolean): boolean;
-var
-  WorkArea, SrcWorkArea: TRect;
 
-  function SrcRectValid(const r: TRect): boolean;
-  begin
-    Result:=(r.Left<r.Right) and (r.Top<r.Bottom);
-  end;
-
-  function ScaleTopLvlX(p: integer): integer;
-  begin
-    Result:=p;
-    if SrcRectValid(SrcWorkArea) and SrcRectValid(WorkArea) then
-      Result:=((p-SrcWorkArea.Left)*(WorkArea.Right-WorkArea.Left))
-                div (SrcWorkArea.Right-SrcWorkArea.Left)
-              +WorkArea.Left;
-  end;
-
-  function ScaleTopLvlY(p: integer): integer;
-  begin
-    Result:=p;
-    if SrcRectValid(SrcWorkArea) and SrcRectValid(WorkArea) then
-      Result:=((p-SrcWorkArea.Top)*(WorkArea.Bottom-WorkArea.Top))
-                   div (SrcWorkArea.Bottom-SrcWorkArea.Top)
-              +WorkArea.Top;
-  end;
-
-  function ScaleChildX(p: integer): integer;
-  begin
-    Result:=p;
-    if SrcRectValid(SrcWorkArea) and SrcRectValid(WorkArea) then
-      Result:=p*(WorkArea.Right-WorkArea.Left)
-                div (SrcWorkArea.Right-SrcWorkArea.Left);
-  end;
-
-  function ScaleChildY(p: integer): integer;
-  begin
-    Result:=p;
-    if SrcRectValid(SrcWorkArea) and SrcRectValid(WorkArea) then
-      Result:=p*(WorkArea.Bottom-WorkArea.Top)
-                div (SrcWorkArea.Bottom-SrcWorkArea.Top);
-  end;
-
-  procedure SetupSite(Site: TCustomForm;
-    Node: TAnchorDockLayoutTreeNode; Parent: TWinControl);
-  var
-    aManager: TAnchorDockManager;
-    NewBounds: TRect;
-    aMonitor: TMonitor;
-    aHostSite: TAnchorDockHostSite;
-  begin
-    if TObject(Site) is TAnchorDockPanel then
-      GetParentForm(Site).BoundsRect:=Node.BoundsRect
-    else begin
-      if Parent=nil then begin
-        if (Node.Monitor>=0) and (Node.Monitor<Screen.MonitorCount) then
-          aMonitor:=Screen.Monitors[Node.Monitor]
-        else
-          aMonitor:=Site.Monitor;
-        WorkArea:=aMonitor.WorkareaRect;
-        {$IFDEF VerboseAnchorDockRestore}
-        debugln(['TAnchorDockMaster.RestoreLayout.SetupSite WorkArea=',dbgs(WorkArea)]);
-        {$ENDIF}
-      end;
-    end;
-    if IsCustomSite(Site) then begin
-      aManager:=TAnchorDockManager(Site.DockManager);
-      if Node.Count>0 then begin
-        // this custom dock site gets a child => store and clear constraints
-        aManager.StoreConstraints;
-      end;
-    end;
-    Site.Constraints.MaxWidth:=0;
-    Site.Constraints.MaxHeight:=0;
-    NewBounds:=Node.BoundsRect;
-    if Parent=nil then begin
-      NewBounds:=Rect(ScaleTopLvlX(NewBounds.Left),ScaleTopLvlY(NewBounds.Top),
-                      ScaleTopLvlX(NewBounds.Right),ScaleTopLvlY(NewBounds.Bottom));
-    end else begin
-      if Parent is TAnchorDockPanel then
-      begin
-        NewBounds:=Rect(0,0,Parent.ClientWidth,Parent.ClientHeight);
-        Site.Align:=alClient;
-      end
-      else
-        NewBounds:=Rect(ScaleChildX(NewBounds.Left),ScaleChildY(NewBounds.Top),
-                      ScaleChildX(NewBounds.Right),ScaleChildY(NewBounds.Bottom));
-
-    end;
-    {$IFDEF VerboseAnchorDockRestore}
-    if Scale then
-      debugln(['TAnchorDockMaster.RestoreLayout.SetupSite scale Site=',DbgSName(Site),' Caption="',Site.Caption,'" OldWorkArea=',dbgs(SrcWorkArea),' CurWorkArea=',dbgs(WorkArea),' OldBounds=',dbgs(Node.BoundsRect),' NewBounds=',dbgs(NewBounds)]);
-    {$ENDIF}
-    Site.BoundsRect:=NewBounds;
-    Site.Visible:=true;
-    if not (TObject(Site) is TAnchorDockPanel) then
-      Site.Parent:=Parent;
-    if IsCustomSite(Parent) then begin
-      aManager:=TAnchorDockManager(Parent.DockManager);
-      Site.Align:=Node.Align;
-      {$IFDEF VerboseAnchorDockRestore}
-      debugln(['TAnchorDockMaster.RestoreLayout.SetupSite custom Site=',DbgSName(Site),' Site.Bounds=',dbgs(Site.BoundsRect),' BoundSplitterPos=',Node.BoundSplitterPos]);
-      {$ENDIF}
-      aManager.RestoreSite(Node.BoundSplitterPos);
-      Site.HostDockSite:=Parent;
-    end;
-    if Site is TAnchorDockHostSite then begin
-      aHostSite:=TAnchorDockHostSite(Site);
-      aHostSite.Header.HeaderPosition:=Node.HeaderPosition;
-      aHostSite.DockRestoreBounds:=NewBounds;
-      if (Node.NodeType<>adltnPages) and (aHostSite.Pages<>nil) then
-        aHostSite.FreePages;
-    end;
-    if not (TObject(Site) is TAnchorDockPanel) then
-    begin
-      if Parent=nil then begin
-        Site.WindowState:=Node.WindowState;
-      end else begin
-        Site.WindowState:=wsNormal;
-      end;
-    end;
-  end;
-
-  function GetNodeSite(Node: TAnchorDockLayoutTreeNode): TAnchorDockHostSite;
-  begin
-    Result:=TAnchorDockHostSite(fTreeNameToDocker[Node.Name]);
-    if Result is TAnchorDockHostSite then exit;
-    if Result<>nil then
-      exit(nil);
-    Result:=CreateSite;
-    fDisabledAutosizing.Add(Result);
-    fTreeNameToDocker[Node.Name]:=Result;
-  end;
-
-  function Restore(Node: TAnchorDockLayoutTreeNode; Parent: TWinControl): TControl;
+  function Restore(ANode: TAnchorDockLayoutTreeNode; AParent: TWinControl): TControl;
   var
     AControl: TControl;
     Site: TAnchorDockHostSite;
@@ -1864,70 +1873,69 @@ var
     aPage: TCustomPage;
   begin
     Result:=nil;
-    if Scale and SrcRectValid(Node.WorkAreaRect) then
-      SrcWorkArea:=Node.WorkAreaRect;
+    if Scale and SrcRectValid(ANode.WorkAreaRect) then
+      SrcWorkArea:=ANode.WorkAreaRect;
     {$IFDEF VerboseAnchorDockRestore}
     debugln(['TAnchorDockMaster.RestoreLayout.Restore Node="',Node.Name,'" ',dbgs(Node.NodeType),' Bounds=',dbgs(Node.BoundsRect),' Parent=',DbgSName(Parent),' ']);
     {$ENDIF}
-    if Node.NodeType=adltnControl then begin
-      // restore control
-      // the control was already created
-      // => dock it
-      AControl:=FindControl(Node.Name);
+    AControl:=nil;
+    if ANode.NodeType in [adltnControl, adltnCustomSite] then
+    begin
+      AControl:=FindControl(ANode.Name);
       if AControl=nil then begin
-        debugln(['TAnchorDockMaster.RestoreLayout.Restore can not find control ',Node.Name]);
+        debugln(['TAnchorDockMaster.RestoreLayout.Restore WARNING: can not find control ',ANode.Name,
+                 ', NodeType=', ANode.NodeType]);
         exit;
       end;
+    end;
+    if ANode.NodeType=adltnControl then begin
+      // restore control
+      // the control was already created  =>  dock it
       DisableControlAutoSizing(AControl);
       if AControl.HostDockSite=nil then
         MakeDockable(AControl,false)
       else
         ClearLayoutProperties(AControl);
-      Site:=AControl.HostDockSite as TAnchorDockHostSite;
       {$IFDEF VerboseAnchorDockRestore}
-      debugln(['TAnchorDockMaster.RestoreLayout.Restore Control Node.Name=',Node.Name,' Control=',DbgSName(AControl),' Site=',DbgSName(Site)]);
+      debugln(['TAnchorDockMaster.RestoreLayout.Restore Control Node.Name=',Node.Name,
+               ' Control=',DbgSName(AControl),' Site=',DbgSName(AControl.HostDockSite)]);
       {$ENDIF}
       AControl.Visible:=true;
-      SetupSite(Site,Node,Parent);
-      Result:=Site;
-    end else if Node.NodeType=adltnCustomSite then begin
+      SetupSite(AControl.HostDockSite,ANode,AParent);
+      Result:=AControl.HostDockSite;
+    end
+    else if ANode.NodeType=adltnCustomSite then begin
       // restore custom dock site
-      // the control was already created
-      // => position it
-      AControl:=FindControl(Node.Name);
-      if AControl=nil then begin
-        debugln(['TAnchorDockMaster.RestoreLayout.Restore WARNING: can not find control ',Node.Name]);
-        exit;
-      end;
+      // the control was already created  =>  position it
       if not (IsCustomSite(AControl) or (AControl is TAnchorDockPanel)) then begin
-        debugln(['TAnchorDockMaster.RestoreLayout.Restore WARNING: ',Node.Name,' is not a custom dock site ',DbgSName(AControl)]);
+        debugln(['TAnchorDockMaster.RestoreLayout.Restore WARNING: ',ANode.Name,' is not a custom dock site ',DbgSName(AControl)]);
         exit;
       end;
       DisableControlAutoSizing(AControl);
-      SetupSite(TCustomForm(AControl),Node,nil);
+      SetupSite(TCustomForm(AControl),ANode,nil);
       Result:=AControl;
       // restore docked site
-      if Node.Count>0 then begin
-        Restore(Node[0],TCustomForm(AControl));
-      end;
-    end else if Node.IsSplitter then begin
+      if ANode.Count>0 then
+        Restore(ANode[0],TCustomForm(AControl));
+    end
+    else if ANode.IsSplitter then begin
       // restore splitter
-      Splitter:=TAnchorDockSplitter(fTreeNameToDocker[Node.Name]);
+      Splitter:=TAnchorDockSplitter(fTreeNameToDocker[ANode.Name]);
       if Splitter=nil then begin
         Splitter:=CreateSplitter;
-        fTreeNameToDocker[Node.Name]:=Splitter;
+        fTreeNameToDocker[ANode.Name]:=Splitter;
       end;
       {$IFDEF VerboseAnchorDockRestore}
       debugln(['TAnchorDockMaster.RestoreLayout.Restore Splitter Node.Name=',Node.Name,' ',dbgs(Node.NodeType),' Splitter=',DbgSName(Splitter)]);
       {$ENDIF}
-      Splitter.Parent:=Parent;
-      NewBounds:=Node.BoundsRect;
+      Splitter.Parent:=AParent;
+      NewBounds:=ANode.BoundsRect;
       if SrcRectValid(SrcWorkArea) then
         NewBounds:=Rect(ScaleChildX(NewBounds.Left),ScaleChildY(NewBounds.Top),
           ScaleChildX(NewBounds.Right),ScaleChildY(NewBounds.Bottom));
       Splitter.DockRestoreBounds:=NewBounds;
       Splitter.BoundsRect:=NewBounds;
-      if Node.NodeType=adltnSplitterVertical then begin
+      if ANode.NodeType=adltnSplitterVertical then begin
         Splitter.ResizeAnchor:=akLeft;
         Splitter.AnchorSide[akLeft].Control:=nil;
         Splitter.AnchorSide[akRight].Control:=nil;
@@ -1937,23 +1945,23 @@ var
         Splitter.AnchorSide[akBottom].Control:=nil;
       end;
       Result:=Splitter;
-    end else if Node.NodeType=adltnLayout then begin
+    end else if ANode.NodeType=adltnLayout then begin
       // restore layout
-      Site:=GetNodeSite(Node);
+      Site:=GetNodeSite(ANode);
       {$IFDEF VerboseAnchorDockRestore}
       debugln(['TAnchorDockMaster.RestoreLayout.Restore Layout Node.Name=',Node.Name,' ChildCount=',Node.Count]);
       {$ENDIF}
       Site.BeginUpdateLayout;
       try
-        SetupSite(Site,Node,Parent);
+        SetupSite(Site,ANode,AParent);
         Site.FSiteType:=adhstLayout;
         Site.Header.Parent:=nil;
         // create children
-        for i:=0 to Node.Count-1 do
-          Restore(Node[i],Site);
+        for i:=0 to ANode.Count-1 do
+          Restore(ANode[i],Site);
         // anchor children
-        for i:=0 to Node.Count-1 do begin
-          ChildNode:=Node[i];
+        for i:=0 to ANode.Count-1 do begin
+          ChildNode:=ANode[i];
           AControl:=fTreeNameToDocker[ChildNode.Name];
           {$IFDEF VerboseAnchorDockRestore}
           debugln(['  Restore layout child anchors Site=',DbgSName(Site),' ChildNode.Name=',ChildNode.Name,' Control=',DbgSName(AControl)]);
@@ -1989,27 +1997,27 @@ var
         Site.EndUpdateLayout;
       end;
       Result:=Site;
-    end else if Node.NodeType=adltnPages then begin
+    end else if ANode.NodeType=adltnPages then begin
       // restore pages
-      Site:=GetNodeSite(Node);
+      Site:=GetNodeSite(ANode);
       {$IFDEF VerboseAnchorDockRestore}
       debugln(['TAnchorDockMaster.RestoreLayout.Restore Pages Node.Name=',Node.Name,' ChildCount=',Node.Count]);
       {$ENDIF}
       Site.BeginUpdateLayout;
       j:=0;
       try
-        SetupSite(Site,Node,Parent);
+        SetupSite(Site,ANode,AParent);
         Site.FSiteType:=adhstPages;
         Site.Header.Parent:=nil;
         if Site.Pages=nil then
           Site.CreatePages;
-        for i:=0 to Node.Count-1 do begin
-          aPageName:=Node[i].Name;
+        for i:=0 to ANode.Count-1 do begin
+          aPageName:=ANode[i].Name;
           if j>=Site.Pages.PageCount then
             Site.Pages.Pages.Add(aPageName);
           aPage:=Site.Pages.Page[j];
           inc(j);
-          AControl:=Restore(Node[i],aPage);
+          AControl:=Restore(ANode[i],aPage);
           if AControl=nil then continue;
           AControl.Align:=alClient;
           for Side:=Low(TAnchorKind) to high(TAnchorKind) do
@@ -2024,8 +2032,8 @@ var
       Result:=Site;
     end else begin
       // create children
-      for i:=0 to Node.Count-1 do
-        Restore(Node[i],Parent);
+      for i:=0 to ANode.Count-1 do
+        Restore(ANode[i],AParent);
     end;
   end;
 
@@ -2881,19 +2889,19 @@ var
   Site: TAnchorDockHostSite;
   SavedSites: TFPList;
   LayoutNode: TAnchorDockLayoutTreeNode;
-  AForm: TCustomForm;
+  AFormOrDockPanel: TWinControl;
   VisibleControls: TStringList;
 
-  procedure SaveForm(theForm: TCustomForm; SaveChildren: boolean);
+  procedure SaveFormOrDockPanel(theFormOrDockPanel: TWinControl; SaveChildren: boolean);
   begin
     // custom dock site
     LayoutNode:=LayoutTree.NewNode(LayoutTree.Root);
     LayoutNode.NodeType:=adltnCustomSite;
-    LayoutNode.Assign(theForm,TObject(theForm) is TAnchorDockPanel);
+    LayoutNode.Assign(theFormOrDockPanel,theFormOrDockPanel is TAnchorDockPanel);
     // can have one normal dock site
     if SaveChildren then
     begin
-      Site:=TAnchorDockManager(theForm.DockManager).GetChildSite;
+      Site:=TAnchorDockManager(theFormOrDockPanel.DockManager).GetChildSite;
       if Site<>nil then begin
         LayoutNode:=LayoutTree.NewNode(LayoutNode);
         Site.SaveLayout(LayoutTree,LayoutNode);
@@ -2913,22 +2921,22 @@ begin
       AControl:=Controls[i];
       if not DockedControlIsVisible(AControl) then continue;
       VisibleControls.Add(AControl.Name);
-      AForm:=GetParentFormOrDockPanel(AControl);
-      if AForm=nil then continue;
-      if SavedSites.IndexOf(AForm)>=0 then continue;
-      SavedSites.Add(AForm);
-      debugln(['TAnchorDockMaster.SaveMainLayoutToTree AForm=',DbgSName(AForm)]);
-      DebugWriteChildAnchors(AForm,true,true);
-      if TObject(AForm) is TAnchorDockPanel then begin
-        SaveForm(GetParentFormOrDockPanel(AForm),{false}true);
+      AFormOrDockPanel:=GetParentFormOrDockPanel(AControl);
+      if AFormOrDockPanel=nil then continue;
+      if SavedSites.IndexOf(AFormOrDockPanel)>=0 then continue;
+      SavedSites.Add(AFormOrDockPanel);
+      debugln(['TAnchorDockMaster.SaveMainLayoutToTree AForm=',DbgSName(AFormOrDockPanel)]);
+      DebugWriteChildAnchors(AFormOrDockPanel,true,true);
+      if AFormOrDockPanel is TAnchorDockPanel then begin
+        SaveFormOrDockPanel(GetParentFormOrDockPanel(AFormOrDockPanel),{false}true);
         //LayoutNode:=LayoutTree.NewNode(LayoutTree.Root);
-        //TAnchorDockPanel(AForm).SaveLayout(LayoutTree,LayoutNode);
-      end else if AForm is TAnchorDockHostSite then begin
-        Site:=TAnchorDockHostSite(AForm);
+        //TAnchorDockPanel(AFormOrDockPanel).SaveLayout(LayoutTree,LayoutNode);
+      end else if AFormOrDockPanel is TAnchorDockHostSite then begin
+        Site:=TAnchorDockHostSite(AFormOrDockPanel);
         LayoutNode:=LayoutTree.NewNode(LayoutTree.Root);
         Site.SaveLayout(LayoutTree,LayoutNode);
-      end else if IsCustomSite(AForm) then begin
-        SaveForm(AForm,true);
+      end else if IsCustomSite(AFormOrDockPanel) then begin
+        SaveFormOrDockPanel(AFormOrDockPanel,true);
       end else
         raise EAnchorDockLayoutError.Create('invalid root control for save: '+DbgSName(AControl));
     end;
@@ -2940,28 +2948,28 @@ begin
   end;
 end;
 
-procedure TAnchorDockMaster.SaveSiteLayoutToTree(AForm: TCustomForm;
+procedure TAnchorDockMaster.SaveSiteLayoutToTree(AControl: TWinControl;
   LayoutTree: TAnchorDockLayoutTree);
 var
   LayoutNode: TAnchorDockLayoutTreeNode;
   Site: TAnchorDockHostSite;
 begin
-  if AForm is TAnchorDockHostSite then begin
-    Site:=TAnchorDockHostSite(AForm);
+  if AControl is TAnchorDockHostSite then begin
+    Site:=TAnchorDockHostSite(AControl);
     Site.SaveLayout(LayoutTree,LayoutTree.Root);
-  end else if TObject(AForm) is TAnchorDockPanel then begin
-    (TObject(AForm) as TAnchorDockPanel).SaveLayout(LayoutTree,LayoutTree.Root);
-  end else if IsCustomSite(AForm) then begin
+  end else if AControl is TAnchorDockPanel then begin
+    (AControl as TAnchorDockPanel).SaveLayout(LayoutTree,LayoutTree.Root);
+  end else if IsCustomSite(AControl) then begin
     LayoutTree.Root.NodeType:=adltnCustomSite;
-    LayoutTree.Root.Assign(AForm);
+    LayoutTree.Root.Assign(AControl);
     // can have one normal dock site
-    Site:=TAnchorDockManager(AForm.DockManager).GetChildSite;
+    Site:=TAnchorDockManager(AControl.DockManager).GetChildSite;
     if Site<>nil then begin
       LayoutNode:=LayoutTree.NewNode(LayoutTree.Root);
       Site.SaveLayout(LayoutTree,LayoutNode);
     end;
   end else
-    raise EAnchorDockLayoutError.Create('invalid root control for save: '+DbgSName(AForm));
+    raise EAnchorDockLayoutError.Create('invalid root control for save: '+DbgSName(AControl));
 end;
 
 function TAnchorDockMaster.CreateRestoreLayout(AControl: TControl
@@ -3433,8 +3441,7 @@ begin
   end;
 end;
 
-function TAnchorDockMaster.CreateSplitter(NamePrefix: string
-  ): TAnchorDockSplitter;
+function TAnchorDockMaster.CreateSplitter(NamePrefix: string): TAnchorDockSplitter;
 var
   i: Integer;
   NewName: String;
