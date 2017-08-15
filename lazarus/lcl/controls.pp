@@ -1,4 +1,4 @@
-{  $Id: controls.pp 55520 2017-07-17 18:11:59Z mattias $  }
+{  $Id: controls.pp 55662 2017-08-14 11:44:02Z ondrej $  }
 {
  /***************************************************************************
                                Controls.pp
@@ -1496,6 +1496,8 @@ type
     function ScaleFontTo96(const ASize: Integer): Integer;
     function ScaleScreenToFont(const ASize: Integer): Integer;
     function ScaleFontToScreen(const ASize: Integer): Integer;
+    function Scale96ToScreen(const ASize: Integer): Integer;
+    function ScaleScreenTo96(const ASize: Integer): Integer;
   public
     // size
     procedure AdjustSize; virtual;// smart calling DoAutoSize

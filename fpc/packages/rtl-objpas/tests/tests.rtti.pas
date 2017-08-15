@@ -55,6 +55,7 @@ implementation
 
 type
 
+  {$M+}
   TGetClassProperties = class
   private
     FPubPropRO: integer;
@@ -65,9 +66,11 @@ type
     property PubPropSetRO: integer read FPubPropRO;
     property PubPropSetRW: integer read FPubPropRW write FPubPropRW;
   end;
+  {$M-}
 
   { TTestValueClass }
 
+  {$M+}
   TTestValueClass = class
   private
     FAInteger: integer;
@@ -90,14 +93,17 @@ type
     property AGetShortString: ShortString read GetAShortString;
     property AWriteOnly: integer write SetWriteOnly;
   end;
+  {$M-}
 
   TManagedRec = record
     s: string;
   end;
 
+{$ifdef fpc}
   TManagedRecOp = record
     class operator AddRef(var a: TManagedRecOp);
   end;
+{$endif}
 
   TNonManagedRec = record
     i: Integer;
@@ -124,6 +130,7 @@ type
   TArrayOfNonManagedRec = array[0..0] of TNonManagedRec;
   TArrayOfByte = array[0..0] of byte;
 
+{$ifdef fpc}
 {$PUSH}
 {$INTERFACES CORBA}
 
@@ -131,10 +138,13 @@ type
   end;
 
 {$POP}
+{$endif}
 
+{$ifdef fpc}
 class operator TManagedRecOp.AddRef(var  a: TManagedRecOp);
 begin
 end;
+{$endif}
 
 { TTestValueClass }
 
@@ -479,7 +489,7 @@ begin
       AProperty := ARttiType.GetProperty('astring');
 
       s := 'ipse lorem or something like that';
-      TValue.Make(@s, TypeInfo(s), AValue);
+      TValue.Make(@s, TypeInfo(string), AValue);
       AProperty.SetValue(ATestClass, AValue);
       CheckEquals(ATestClass.AString, s);
       s := 'Another string';
@@ -509,7 +519,7 @@ begin
       AProperty := ARttiType.GetProperty('aInteger');
 
       i := -43573;
-      TValue.Make(@i, TypeInfo(i), AValue);
+      TValue.Make(@i, TypeInfo(Integer), AValue);
       AProperty.SetValue(ATestClass, AValue);
       CheckEquals(ATestClass.AInteger, i);
       i := 1;
@@ -539,12 +549,12 @@ begin
       AProperty := ARttiType.GetProperty('aboolean');
 
       b := true;
-      TValue.Make(@b, TypeInfo(b), AValue);
+      TValue.Make(@b, TypeInfo(Boolean), AValue);
       AProperty.SetValue(ATestClass, AValue);
       CheckEquals(ATestClass.ABoolean, b);
       b := false;
       CheckEquals(ATestClass.ABoolean, true);
-      TValue.Make(@b, TypeInfo(b), AValue);
+      TValue.Make(@b, TypeInfo(Boolean), AValue);
       AProperty.SetValue(ATestClass, AValue);
       CheckEquals(ATestClass.ABoolean, false);
     finally
@@ -573,14 +583,14 @@ begin
       AProperty := ARttiType.GetProperty('aShortString');
 
       s := 'ipse lorem or something like that';
-      TValue.Make(@s, TypeInfo(s), AValue);
+      TValue.Make(@s, TypeInfo(String), AValue);
       AProperty.SetValue(ATestClass, AValue);
       CheckEquals(ATestClass.AShortString, s);
       s := 'Another string';
       CheckEquals(ATestClass.AShortString, 'ipse lorem or something like that');
 
       ss := 'Hello World';
-      TValue.Make(@ss, TypeInfo(ss), AValue);
+      TValue.Make(@ss, TypeInfo(ShortString), AValue);
       AProperty.SetValue(ATestClass, AValue);
       CheckEquals(ATestClass.AShortString, ss);
       ss := 'Foobar';
@@ -685,7 +695,11 @@ begin
   LContext := TRttiContext.Create;
 
   LType := LContext.GetType(TypeInfo(integer));
+{$ifdef fpc}
   CheckEquals(LType.Name, 'LongInt');
+{$else}
+  CheckEquals(LType.Name, 'Integer');
+{$endif}
 
   LContext.Free;
 end;
@@ -745,7 +759,9 @@ begin
   CheckEquals(true, IsManaged(TypeInfo(TArrayOfString)),
     'IsManaged for tkArray (with managed ElType)');
   CheckEquals(true, IsManaged(TypeInfo(TManagedRec)), 'IsManaged for tkRecord');
+  {$ifdef fpc}
   CheckEquals(true, IsManaged(TypeInfo(TManagedRecOp)), 'IsManaged for tkRecord');
+  {$endif}
   CheckEquals(true, IsManaged(TypeInfo(IInterface)), 'IsManaged for tkInterface');
   CheckEquals(true, IsManaged(TypeInfo(TManagedObj)), 'IsManaged for tkObject');
   {$ifdef fpc}
@@ -760,7 +776,12 @@ begin
   CheckEquals(false, IsManaged(TypeInfo(TTestEnum)), 'IsManaged for tkEnumeration');
   CheckEquals(false, IsManaged(TypeInfo(Single)), 'IsManaged for tkFloat');
   CheckEquals(false, IsManaged(TypeInfo(TTestSet)), 'IsManaged for tkSet');
+  {$ifdef fpc}
   CheckEquals(false, IsManaged(TypeInfo(TTestMethod)), 'IsManaged for tkMethod');
+  {$else}
+  { for some reason Delphi considers method pointers to be managed :/ }
+  CheckEquals(true, IsManaged(TypeInfo(TTestMethod)), 'IsManaged for tkMethod');
+  {$endif}
   CheckEquals(false, IsManaged(TypeInfo(TArrayOfByte)),
     'IsManaged for tkArray (with non managed ElType)');
   CheckEquals(false, IsManaged(TypeInfo(TArrayOfNonManagedRec)),
@@ -772,10 +793,14 @@ begin
   CheckEquals(false, IsManaged(TypeInfo(Boolean)), 'IsManaged for tkBool');
   CheckEquals(false, IsManaged(TypeInfo(Int64)), 'IsManaged for tkInt64');
   CheckEquals(false, IsManaged(TypeInfo(UInt64)), 'IsManaged for tkQWord');
+  {$ifdef fpc}
   CheckEquals(false, IsManaged(TypeInfo(ICORBATest)), 'IsManaged for tkInterfaceRaw');
+  {$endif}
   CheckEquals(false, IsManaged(TypeInfo(TTestProc)), 'IsManaged for tkProcVar');
   CheckEquals(false, IsManaged(TypeInfo(TTestHelper)), 'IsManaged for tkHelper');
+  {$ifdef fpc}
   CheckEquals(false, IsManaged(TypeInfo(file)), 'IsManaged for tkFile');
+  {$endif}
   CheckEquals(false, IsManaged(TypeInfo(TClass)), 'IsManaged for tkClassRef');
   CheckEquals(false, IsManaged(TypeInfo(Pointer)), 'IsManaged for tkPointer');
   CheckEquals(false, IsManaged(nil), 'IsManaged for nil');

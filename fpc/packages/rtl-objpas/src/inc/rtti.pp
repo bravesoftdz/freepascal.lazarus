@@ -47,15 +47,22 @@ type
       3:  (FAsObject: Pointer);
       4:  (FAsClass: TClass);
       5:  (FAsSByte: Shortint);
+      6:  (FAsSWord: Smallint);
+      7:  (FAsSLong: LongInt);
+      8:  (FAsSingle: Single);
       9:  (FAsDouble: Double);
       10: (FAsExtended: Extended);
+      11: (FAsComp: Comp);
       12: (FAsCurr: Currency);
+      13: (FAsUInt64: QWord);
       14: (FAsSInt64: Int64);
+      15: (FAsMethod: TMethod);
+      16: (FAsPointer: Pointer);
   end;
 
   { TValue }
 
-  TValue = object
+  TValue = record
   private
     FData: TValueData;
     function GetTypeDataProp: PTypeData; inline;
@@ -63,8 +70,8 @@ type
     function GetTypeKind: TTypeKind; inline;
     function GetIsEmpty: boolean; inline;
   public
-    class function Empty: TValue;
-    class procedure Make(ABuffer: pointer; ATypeInfo: PTypeInfo; out result: TValue);
+    class function Empty: TValue; static;
+    class procedure Make(ABuffer: pointer; ATypeInfo: PTypeInfo; out result: TValue); static;
     function IsArray: boolean;
     function AsString: string;
     function AsExtended: Extended;
@@ -77,7 +84,7 @@ type
     function AsBoolean: boolean;
     function AsCurrency: Currency;
     function AsInteger: Integer;
-    function ToString: string;
+    function ToString: String;
     function IsType(ATypeInfo: PTypeInfo): boolean; inline;
     function TryAsOrdinal(out AResult: int64): boolean;
     property Kind: TTypeKind read GetTypeKind;
@@ -465,36 +472,47 @@ class procedure TValue.Make(ABuffer: pointer; ATypeInfo: PTypeInfo; out result: 
 type
   PBoolean16 = ^Boolean16;
   PBoolean32 = ^Boolean32;
+  PBoolean64 = ^Boolean64;
   PByteBool = ^ByteBool;
+  PQWordBool = ^QWordBool;
 begin
   result.FData.FTypeInfo:=ATypeInfo;
   case ATypeInfo^.Kind of
     tkSString  : result.FData.FValueData := TValueDataIntImpl.Create(@PShortString(ABuffer)^[1],Length(PShortString(ABuffer)^));
     tkAString  : result.FData.FValueData := TValueDataIntImpl.Create(@PAnsiString(ABuffer)^[1],length(PAnsiString(ABuffer)^));
     tkClass    : result.FData.FAsObject := PPointer(ABuffer)^;
-    tkInt64,
-    tkQWord    : result.FData.FAsSInt64 := PInt64(ABuffer)^;
+    tkClassRef : result.FData.FAsClass := PClass(ABuffer)^;
+    tkInt64    : result.FData.FAsSInt64 := PInt64(ABuffer)^;
+    tkQWord    : result.FData.FAsUInt64 := PQWord(ABuffer)^;
     tkInteger  : begin
                    case GetTypeData(ATypeInfo)^.OrdType of
-                     otSByte, otUByte: result.FData.FAsSInt64 := Int64(PByte(ABuffer)^);
-                     otSWord, otUWord: result.FData.FAsSInt64 := Int64(PWord(ABuffer)^);
-                     otSLong, otULong: result.FData.FAsSInt64 := Int64(PLongWord(ABuffer)^);
+                     otSByte: result.FData.FAsSByte := PShortInt(ABuffer)^;
+                     otUByte: result.FData.FAsUByte := PByte(ABuffer)^;
+                     otSWord: result.FData.FAsSWord := PSmallInt(ABuffer)^;
+                     otUWord: result.FData.FAsUWord := PWord(ABuffer)^;
+                     otSLong: result.FData.FAsSLong := PLongInt(ABuffer)^;
+                     otULong: result.FData.FAsULong := PLongWord(ABuffer)^;
                    end;
                  end;
     tkBool     : begin
                    case GetTypeData(ATypeInfo)^.OrdType of
-                     otUByte: result.FData.FAsSInt64 := Int64(PBoolean(ABuffer)^);
-                     otUWord: result.FData.FAsSInt64 := Int64(PBoolean16(ABuffer)^);
-                     otULong: result.FData.FAsSInt64 := Int64(PBoolean32(ABuffer)^);
-                     otSByte: result.FData.FAsSInt64 := Int64(PByteBool(ABuffer)^);
-                     otSWord: result.FData.FAsSInt64 := Int64(PWordBool(ABuffer)^);
-                     otSLong: result.FData.FAsSInt64 := Int64(PLongBool(ABuffer)^);
+                     otUByte: result.FData.FAsSByte := ShortInt(PBoolean(ABuffer)^);
+                     otUWord: result.FData.FAsUWord := Byte(PBoolean16(ABuffer)^);
+                     otULong: result.FData.FAsULong := SmallInt(PBoolean32(ABuffer)^);
+                     otUQWord: result.FData.FAsUInt64 := QWord(PBoolean64(ABuffer)^);
+                     otSByte: result.FData.FAsSByte := Word(PByteBool(ABuffer)^);
+                     otSWord: result.FData.FAsSWord := LongInt(PWordBool(ABuffer)^);
+                     otSLong: result.FData.FAsSLong := LongWord(PLongBool(ABuffer)^);
+                     otSQWord: result.FData.FAsSInt64 := Int64(PQWordBool(ABuffer)^);
                    end;
                  end;
     tkFloat    : begin
                    case GetTypeData(ATypeInfo)^.FloatType of
                      ftCurr   : result.FData.FAsCurr := PCurrency(ABuffer)^;
+                     ftSingle : result.FData.FAsSingle := PSingle(ABuffer)^;
                      ftDouble : result.FData.FAsDouble := PDouble(ABuffer)^;
+                     ftExtended: result.FData.FAsExtended := PExtended(ABuffer)^;
+                     ftComp   : result.FData.FAsComp := PComp(ABuffer)^;
                    end;
                  end;
   else
@@ -549,6 +567,7 @@ begin
   if Kind = tkFloat then
     begin
     case TypeData^.FloatType of
+      ftSingle   : result := FData.FAsSingle;
       ftDouble   : result := FData.FAsDouble;
       ftExtended : result := FData.FAsExtended;
     else
@@ -574,7 +593,7 @@ end;
 
 function TValue.IsClass: boolean;
 begin
-  result := false;
+  result := Kind = tkClassRef;
 end;
 
 function TValue.AsClass: TClass;
@@ -587,21 +606,39 @@ end;
 
 function TValue.IsOrdinal: boolean;
 begin
-  result := Kind in [tkInteger, tkInt64, tkBool];
+  result := Kind in [tkInteger, tkInt64, tkQWord, tkBool];
 end;
 
 function TValue.AsBoolean: boolean;
 begin
   if (Kind = tkBool) then
-    result := boolean(FData.FAsSInt64)
+    case TypeData^.OrdType of
+      otSByte:  Result := ByteBool(FData.FAsSByte);
+      otUByte:  Result := Boolean(FData.FAsUByte);
+      otSWord:  Result := WordBool(FData.FAsSWord);
+      otUWord:  Result := Boolean16(FData.FAsUWord);
+      otSLong:  Result := LongBool(FData.FAsSLong);
+      otULong:  Result := Boolean32(FData.FAsULong);
+      otSQWord: Result := QWordBool(FData.FAsSInt64);
+      otUQWord: Result := Boolean64(FData.FAsUInt64);
+    end
   else
     raise EInvalidCast.Create(SErrInvalidTypecast);
 end;
 
-function TValue.AsOrdinal: int64;
+function TValue.AsOrdinal: Int64;
 begin
   if IsOrdinal then
-    result := FData.FAsSInt64
+    case TypeData^.OrdType of
+      otSByte:  Result := FData.FAsSByte;
+      otUByte:  Result := FData.FAsUByte;
+      otSWord:  Result := FData.FAsSWord;
+      otUWord:  Result := FData.FAsUWord;
+      otSLong:  Result := FData.FAsSLong;
+      otULong:  Result := FData.FAsULong;
+      otSQWord: Result := FData.FAsSInt64;
+      otUQWord: Result := FData.FAsUInt64;
+    end
   else
     raise EInvalidCast.Create(SErrInvalidTypecast);
 end;
@@ -616,8 +653,17 @@ end;
 
 function TValue.AsInteger: Integer;
 begin
-  if Kind in [tkInteger, tkInt64] then
-    result := integer(FData.FAsSInt64)
+  if Kind in [tkInteger, tkInt64, tkQWord] then
+    case TypeData^.OrdType of
+      otSByte:  Result := FData.FAsSByte;
+      otUByte:  Result := FData.FAsUByte;
+      otSWord:  Result := FData.FAsSWord;
+      otUWord:  Result := FData.FAsUWord;
+      otSLong:  Result := FData.FAsSLong;
+      otULong:  Result := FData.FAsULong;
+      otSQWord: Result := FData.FAsSInt64;
+      otUQWord: Result := FData.FAsUInt64;
+    end
   else
     raise EInvalidCast.Create(SErrInvalidTypecast);
 end;
