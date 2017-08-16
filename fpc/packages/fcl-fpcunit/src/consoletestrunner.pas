@@ -384,9 +384,11 @@ Function TTestRunner.ParseOptions : Boolean;
 
 begin
   Result:=True;
-  if HasOption('h', 'help') or ((ParamCount = 0) and not DefaultRunAllTests) then
+  if HasOption('h', 'help') or ((ParamCount = 0) and (FRunMode<>rmAll)) then
     begin
     Usage;
+    if not HasOption('h','help') then
+      ExitCode:=1;
     Exit(False);
     end;
   //get the format parameter
@@ -495,6 +497,8 @@ var
 begin
   Terminate;
   FormatParam := DefaultFormat;
+  If DefaultRunAllTests then
+    FRunMode:=rmAll;
   S := CheckOptions(GetShortOpts, LongOpts);
   if (S <> '') then
     begin
