@@ -27,7 +27,7 @@ replace them with the notice and other provisions required by the GPL.
 If you do not delete the provisions above, a recipient may use your version
 of this file under either the MPL or the GPL.
 
-$Id: synedit.pp 53132 2016-10-17 02:22:41Z martin $
+$Id: synedit.pp 55675 2017-08-17 10:39:39Z ondrej $
 
 You may retrieve the latest version of this file at the SynEdit home page,
 located at http://SynEdit.SourceForge.net
@@ -784,6 +784,8 @@ type
     property PaintLockOwner: TSynEditBase read GetPaintLockOwner write SetPaintLockOwner;
     property TextDrawer: TheTextDrawer read fTextDrawer;
 
+    procedure DoAutoAdjustLayout(const AMode: TLayoutAdjustmentPolicy;
+      const AXProportion, AYProportion: Double); override;
   protected
     procedure CreateHandle; override;
     procedure CreateParams(var Params: TCreateParams); override;
@@ -8227,6 +8229,19 @@ begin
   {$ENDIF}
   SurrenderPrimarySelection;
   inherited DestroyWnd;
+end;
+
+procedure TCustomSynEdit.DoAutoAdjustLayout(
+  const AMode: TLayoutAdjustmentPolicy; const AXProportion, AYProportion: Double
+  );
+begin
+  inherited DoAutoAdjustLayout(AMode, AXProportion, AYProportion);
+
+  if AMode in [lapAutoAdjustWithoutHorizontalScrolling, lapAutoAdjustForDPI] then
+  begin
+    FLeftGutter.ScalePPI(AXProportion);
+    FRightGutter.ScalePPI(AXProportion);
+  end;
 end;
 
 procedure TCustomSynEdit.DoBlockIndent;
