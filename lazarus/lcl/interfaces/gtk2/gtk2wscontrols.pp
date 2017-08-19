@@ -1,4 +1,4 @@
-{ $Id: gtk2wscontrols.pp 55184 2017-06-03 14:22:45Z zeljko $}
+{ $Id: gtk2wscontrols.pp 55680 2017-08-19 08:19:08Z mattias $}
 {
  *****************************************************************************
  *                             Gtk2WSControls.pp                             * 
@@ -685,7 +685,7 @@ begin
     // as expected for some reason.issue #20741.
     // Constraints fix issue #29563
     AFixedWidthHeight := AForm.BorderStyle in [bsDialog, bsSingle, bsToolWindow];
-    FillChar(Geometry, SizeOf(TGdkGeometry), 0);
+    FillChar(Geometry{%H-}, SizeOf(TGdkGeometry), 0);
     with Geometry do
     begin
       if not AFixedWidthHeight and (AForm.Constraints.MinWidth > 0) then
