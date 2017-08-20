@@ -994,10 +994,30 @@ begin
 end;
 
 procedure TCustomCoolBar.MouseUp(Button: TMouseButton; Shift: TShiftState; X, Y: Integer);
-var aBand: Integer;
-    newRowBelow, needRecalc: Boolean;
+var aBand, w, h: Integer;
+    newRowBelow, needRecalc, needBandMaximize, aGrabber: Boolean;
 begin
   inherited MouseUp(Button, Shift, X, Y);
+  if FBandMaximize<>bmNone then begin
+    case FBandMaximize of
+      bmClick:   needBandMaximize:=true;
+      bmDblClick:needBandMaximize:=ssDouble in Shift;
+      else       needBandMaximize:=false;
+    end;
+    if needBandMaximize then begin
+      MouseToBandPos(X, Y, aBand, aGrabber);
+      if aGrabber then begin
+        w:=0;
+        h:=0;
+        FVisiBands[aBand].control.GetPreferredSize(w,h);
+        if vertical then
+          FVisiBands[aBand].width:=FVisiBands[aBand].CalcControlLeft+h+HorizontalSpacing+FVisiBands[aBand].cDivider
+        else
+          FVisiBands[aBand].width:=FVisiBands[aBand].CalcControlLeft+w+HorizontalSpacing+FVisiBands[aBand].cDivider;
+        FDraggedBandIndex:=-1;
+      end;
+    end;
+  end;
   if (FDragBand = dbMove) and (FDraggedBandIndex <> -1) then begin
     needRecalc := False;
     MouseToBandPos(X, Y, aBand, newRowBelow);  //newRowBelow is NOT used here
@@ -1305,14 +1325,14 @@ begin
         Canvas.Brush.Style := bsClear;
         Canvas.TextOut(aRect.Left, aRect.Top, FVisiBands[i].Text);
       end;
+      if not FRightToLeft or Vertical then
+        aRowEnd := IsRowEnd(aLeft, i)
+      else
+        aRowEnd := IsRowEnd(Width-x, i);
       if BandBorderStyle = bsSingle then begin
         //paint a Separator border below the row of bands ____
         x := aLeft;
         inc(aLeft, FVisiBands[i].Width);
-        if not FRightToLeft or Vertical then
-          aRowEnd := IsRowEnd(aLeft, i)
-        else
-          aRowEnd := IsRowEnd(Width-x, i);
         if (aRowEnd or ((i = aCountM1) and not AutoSize)) then begin
           if not Vertical or not FRightToLeft then
            PaintSeparator(aTop+FVisiBands[i].FHeight)
@@ -1370,9 +1390,7 @@ procedure TCustomCoolBar.WMSize(var Message: TLMSize);
 begin
   //DebugLn('WMSize');
   inherited WMSize(Message);
-  if not Autosize then begin
-    CalculateAndAlign;
-    Invalidate;  //required by GTK2
-  end;
+  CalculateAndAlign;
+  Invalidate;  //required by GTK2 and WINDOWS
 end;
 
