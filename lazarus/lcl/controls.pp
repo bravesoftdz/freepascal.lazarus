@@ -1,4 +1,4 @@
-{  $Id: controls.pp 55662 2017-08-14 11:44:02Z ondrej $  }
+{  $Id: controls.pp 55714 2017-08-20 10:25:38Z ondrej $  }
 {
  /***************************************************************************
                                Controls.pp
@@ -1661,7 +1661,7 @@ type
     property Enabled: Boolean read GetEnabled write SetEnabled stored IsEnabledStored default True;
     property Font: TFont read FFont write SetFont stored IsFontStored;
     property IsControl: Boolean read FIsControl write FIsControl;
-    property MouseEntered: Boolean read FMouseInClient; deprecated 'use MouseInClient instead';// changed in 1.9
+    property MouseEntered: Boolean read FMouseInClient; deprecated 'use MouseInClient instead';// changed in 1.9, will be removed in 1.11
     property MouseInClient: Boolean read FMouseInClient;
     property OnChangeBounds: TNotifyEvent read FOnChangeBounds write FOnChangeBounds;
     property OnClick: TNotifyEvent read FOnClick write FOnClick;

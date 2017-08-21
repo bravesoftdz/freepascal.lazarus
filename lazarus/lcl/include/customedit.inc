@@ -53,7 +53,8 @@ begin
   if WidgetSet.GetLCLCapability(lcTextHint) = LCL_CAPABILITY_YES then
     TWSCustomEditClass(WidgetSetClass).SetTextHint(Self, FTextHint)
   else
-    if CanShowEmulatedTextHint then ShowEmulatedTextHint;
+    if CanShowEmulatedTextHint then
+      ShowEmulatedTextHint(True);
 end;
 
 {------------------------------------------------------------------------------
@@ -680,22 +681,11 @@ begin
   end;
 end;
 
-procedure TCustomEdit.SetTextHintFontColor(const aTextHintFontColor: TColor);
-begin
-  DebugLn('TCustomEdit.TextHintFontColor is deprecated and will be removed in Lazarus 1.9');
-end;
-
-procedure TCustomEdit.SetTextHintFontStyle(const aTextHintFontStyle: TFontStyles
-  );
-begin
-  DebugLn('TCustomEdit.TextHintFontStyle is deprecated and will be removed in Lazarus 1.9');
-end;
-
-procedure TCustomEdit.ShowEmulatedTextHint;
+procedure TCustomEdit.ShowEmulatedTextHint(const ForceShow: Boolean);
 var
   HintFont: TFont;
 begin
-  if (FEmulatedTextHintStatus<>thsHidden) then
+  if (FEmulatedTextHintStatus<>thsHidden) and not ForceShow then
     Exit;
 
   FEmulatedTextHintStatus := thsChanging;
@@ -711,18 +701,6 @@ begin
   TWSCustomEditClass(WidgetSetClass).SetPasswordChar(Self, #0);
 
   FEmulatedTextHintStatus := thsShowing;
-end;
-
-function TCustomEdit.GetTextHintFontColor: TColor;
-begin
-  Result := clNone;
-  DebugLn('TCustomEdit.TextHintFontColor is deprecated and will be removed in Lazarus 1.9');
-end;
-
-function TCustomEdit.GetTextHintFontStyle: TFontStyles;
-begin
-  Result := [];
-  DebugLn('TCustomEdit.TextHintFontStyle is deprecated and will be removed in Lazarus 1.9');
 end;
 
 procedure TCustomEdit.HideEmulatedTextHint;

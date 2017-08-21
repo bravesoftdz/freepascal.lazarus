@@ -325,7 +325,7 @@ uses
          The value of this constant is equal to the constant
          PARM_BOUNDARY / BITS_PER_UNIT in the GCC source.
       }
-      std_param_align = 4;  { for 32-bit version only }
+      std_param_align = sizeof(AWord);
 
 {$ifdef SPARC64}
       STACK_BIAS = 2047;
@@ -457,7 +457,7 @@ implementation
       begin
         case getregtype(reg) of
           R_INTREGISTER :
-            result:=OS_32;
+            result:=OS_INT;
           R_FPUREGISTER :
             begin
               if getsubreg(reg)=R_SUBFD then
