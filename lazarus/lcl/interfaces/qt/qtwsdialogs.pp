@@ -1,4 +1,4 @@
-{ $Id: qtwsdialogs.pp 55211 2017-06-04 15:14:29Z juha $}
+{ $Id: qtwsdialogs.pp 55737 2017-08-23 09:29:58Z zeljko $}
 {
  *****************************************************************************
  *                              QtWSDialogs.pp                               * 
@@ -411,10 +411,12 @@ var
   ReturnList: QStringListH;
   i: integer;
   QtFileDialog: TQtFileDialog;
+  {$if defined(QT_NATIVE_DIALOGS) or defined(MSWINDOWS)}
+  s: string;
+  {$endif}
   {$ifdef QT_NATIVE_DIALOGS}
   selectedFilter, saveFileName, saveFilter, saveTitle, sDir: WideString;
   Flags: Cardinal;
-  s: string;
   {$endif}
   ActiveWin: HWND;
 begin
