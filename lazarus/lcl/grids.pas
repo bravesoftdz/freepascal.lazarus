@@ -1,4 +1,4 @@
-{ $Id: grids.pas 55640 2017-08-06 22:40:30Z wp $}
+{ $Id: grids.pas 55746 2017-08-26 19:08:53Z jesus $}
 {
  /***************************************************************************
                                Grids.pas
@@ -769,6 +769,7 @@ type
     FOnSelection: TOnSelectEvent;
     FOnTopLeftChanged: TNotifyEvent;
     FUseXORFeatures: boolean;
+    FValidateOnSetSelection: boolean;
     FVSbVisible, FHSbVisible: ShortInt; // state: -1 not initialized, 0 hidden, 1 visible
     FDefaultTextStyle: TTextStyle;
     FLastWidth: Integer;
@@ -1019,7 +1020,6 @@ type
     procedure EditorSelectAll;
     procedure EditorShow(const SelAll: boolean); virtual;
     procedure EditorShowInCell(const aCol,aRow:Integer); virtual;
-    procedure EditorTextChanged(const aCol,aRow: Integer; const aText:string); virtual;
     procedure EditorWidthChanged(aCol,aWidth: Integer); virtual;
     function  FirstGridColumn: integer; virtual;
     function  FixedGrid: boolean;
@@ -1100,7 +1100,7 @@ type
     procedure ResetDefaultColWidths; virtual;
     procedure ResetEditor;
     procedure ResetLastMove;
-    function ResetOffset(chkCol, ChkRow: Boolean): Boolean;
+    function  ResetOffset(chkCol, ChkRow: Boolean): Boolean;
     procedure ResetSizes; virtual;
     procedure ResizeColumn(aCol, aWidth: Integer);
     procedure ResizeRow(aRow, aHeight: Integer);
@@ -1219,6 +1219,7 @@ type
     property TitleStyle: TTitleStyle read FTitleStyle write SetTitleStyle default tsLazarus;
     property TopRow: Integer read GetTopRow write SetTopRow;
     property UseXORFeatures: boolean read FUseXORFeatures write SetUseXorFeatures default false;
+    property ValidateOnSetSelection: boolean read FValidateOnSetSelection write FValidateOnSetSelection;
     property VisibleColCount: Integer read GetVisibleColCount stored false;
     property VisibleRowCount: Integer read GetVisibleRowCount stored false;
 
@@ -1265,6 +1266,8 @@ type
     procedure EditorKeyDown(Sender: TObject; var Key:Word; Shift:TShiftState);
     procedure EditorKeyPress(Sender: TObject; var Key: Char);
     procedure EditorKeyUp(Sender: TObject; var key:Word; shift:TShiftState);
+    procedure EditorTextChanged(const aCol,aRow: Integer; const aText:string); virtual;
+
     procedure EndUpdate(aRefresh: boolean = true);
     procedure EraseBackground(DC: HDC); override;
     function  Focused: Boolean; override;
@@ -1714,6 +1717,7 @@ type
     property Objects[ACol, ARow: Integer]: TObject read GetObjects write SetObjects;
     property Rows[index: Integer]: TStrings read GetRows write SetRows;
     property UseXORFeatures;
+    property ValidateOnSetSelection;
   end;
 
 
@@ -9447,6 +9451,8 @@ begin
   FCheckedBitmap := LoadResBitmapImage('dbgridcheckedcb');
   FGrayedBitmap := LoadResBitmapImage('dbgridgrayedcb');
 
+  FValidateOnSetSelection := false;
+
   varRubberSpace := MulDiv(constRubberSpace, Screen.PixelsPerInch, 96);
   varCellPadding := MulDiv(constCellPadding, Screen.PixelsPerInch, 96);
   varColRowBorderTolerance := MulDiv(constColRowBorderTolerance, Screen.PixelsPerInch, 96);
@@ -11090,10 +11096,8 @@ var
         aCol := StartCol + i;
         if (aCol<ColCount) and not GetColumnReadonly(aCol) then begin
           NewValue := Fields[i];
-          {$IFDEF EnableGridPasteValidateEntry}
-          if not ValidateEntry(aCol,aRow,Cells[aCol,aRow],NewValue) then
+          if ValidateOnSetSelection and not ValidateEntry(aCol,aRow,Cells[aCol,aRow],NewValue) then
             break;
-          {$ENDIF}
           DoCellProcess(aCol, aRow, cpPaste, NewValue);
           Cells[aCol, aRow] := NewValue;
         end;
@@ -11110,9 +11114,8 @@ begin
     LCSVUtils.LoadFromCSVStream(Stream, @LoadTSV, #9);
   finally
     Stream.Free;
-    {$IFDEF EnableGridPasteValidateEntry}
-    EditingDone;
-    {$ENDIF}
+    if ValidateOnSetSelection then
+      EditingDone;
   end;
 end;
 
