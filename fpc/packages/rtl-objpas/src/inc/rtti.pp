@@ -115,6 +115,8 @@ type
     property IsEmpty: boolean read GetIsEmpty;
   end;
 
+  TValueArray = specialize TArray<TValue>;
+
   { TRttiContext }
 
   TRttiContext = record
@@ -256,6 +258,10 @@ type
     property IsWritable: boolean read GetIsWritable;
     property Visibility: TMemberVisibility read GetVisibility;
   end;
+
+  EInsufficientRtti = class(Exception);
+  EInvocationError = class(Exception);
+  ENonPublicType = class(Exception);
 
 function IsManaged(TypeInfo: PTypeInfo): boolean;
 
@@ -445,6 +451,8 @@ end;
 
 procedure IntFinalize(APointer, ATypeInfo: Pointer);
   external name 'FPC_FINALIZE';
+procedure IntInitialize(APointer, ATypeInfo: Pointer);
+  external name 'FPC_INITIALIZE';
 procedure IntAddRef(APointer, ATypeInfo: Pointer);
   external name 'FPC_ADDREF';
 function IntCopy(ASource, ADest, ATypeInfo: Pointer): SizeInt;
@@ -457,22 +465,32 @@ begin
   if ALen>0 then
     begin
       Getmem(FBuffer,FDataSize);
-      system.move(ACopyFromBuffer^,FBuffer^,FDataSize);
+      if Assigned(ACopyFromBuffer) then
+        system.move(ACopyFromBuffer^,FBuffer^,FDataSize)
+      else
+        FillChar(FBuffer^, FDataSize, 0);
     end;
   FIsCopy := True;
   FUseAddRef := AAddRef;
-  if AAddRef and (ALen > 0) then
-    IntAddRef(FBuffer, FTypeInfo);
+  if AAddRef and (ALen > 0) then begin
+    if Assigned(ACopyFromBuffer) then
+      IntAddRef(FBuffer, FTypeInfo)
+    else
+      IntInitialize(FBuffer, FTypeInfo);
+  end;
 end;
 
 constructor TValueDataIntImpl.CreateRef(AData: Pointer; ATypeInfo: PTypeInfo; AAddRef: Boolean);
 begin
   FTypeInfo := ATypeInfo;
   FDataSize := SizeOf(Pointer);
-  FBuffer := PPointer(AData)^;
+  if Assigned(AData) then
+    FBuffer := PPointer(AData)^
+  else
+    FBuffer := Nil;
   FIsCopy := False;
   FUseAddRef := AAddRef;
-  if AAddRef then
+  if AAddRef and Assigned(AData) then
     IntAddRef(@FBuffer, FTypeInfo);
 end;
 
@@ -537,7 +555,12 @@ end;
 class function TValue.Empty: TValue;
 begin
   result.FData.FTypeInfo := nil;
-  result.FData.FAsUInt64 := 0;
+{$if SizeOf(TMethod) > SizeOf(QWord)}
+  Result.FData.FAsMethod.Code := Nil;
+  Result.FData.FAsMethod.Data := Nil;
+{$else}
+  Result.FData.FAsUInt64 := 0;
+{$endif}
 end;
 
 class procedure TValue.Make(ABuffer: pointer; ATypeInfo: PTypeInfo; out result: TValue);
@@ -548,14 +571,29 @@ type
   PByteBool = ^ByteBool;
   PQWordBool = ^QWordBool;
   PMethod = ^TMethod;
+var
+  td: PTypeData;
+  size: SizeInt;
 begin
   result.FData.FTypeInfo:=ATypeInfo;
   { resets the whole variant part; FValueData is already Nil }
+{$if SizeOf(TMethod) > SizeOf(QWord)}
+  Result.FData.FAsMethod.Code := Nil;
+  Result.FData.FAsMethod.Data := Nil;
+{$else}
   Result.FData.FAsUInt64 := 0;
-  if not Assigned(ABuffer) then
+{$endif}
+  if not Assigned(ATypeInfo) then
     Exit;
+  { first handle those types that need a TValueData implementation }
   case ATypeInfo^.Kind of
-    tkSString  : result.FData.FValueData := TValueDataIntImpl.CreateCopy(ABuffer, Length(PShortString(ABuffer)^) + 1, ATypeInfo, True);
+    tkSString  : begin
+                   if Assigned(ABuffer) then
+                     size := Length(PShortString(ABuffer)^) + 1
+                   else
+                     size := 256;
+                   result.FData.FValueData := TValueDataIntImpl.CreateCopy(ABuffer, size, ATypeInfo, True);
+                 end;
     tkWString,
     tkUString,
     tkAString  : result.FData.FValueData := TValueDataIntImpl.CreateRef(ABuffer, ATypeInfo, True);
@@ -563,15 +601,67 @@ begin
     tkArray    : result.FData.FValueData := TValueDataIntImpl.CreateCopy(ABuffer, Result.TypeData^.ArrayData.Size, ATypeInfo, False);
     tkObject,
     tkRecord   : result.FData.FValueData := TValueDataIntImpl.CreateCopy(ABuffer, Result.TypeData^.RecSize, ATypeInfo, False);
+    tkInterface: result.FData.FValueData := TValueDataIntImpl.CreateRef(ABuffer, ATypeInfo, True);
+  end;
+  if not Assigned(ABuffer) then
+    Exit;
+  { now handle those that are happy with the variant part of FData }
+  case ATypeInfo^.Kind of
+    tkSString,
+    tkWString,
+    tkUString,
+    tkAString,
+    tkDynArray,
+    tkArray,
+    tkObject,
+    tkRecord,
+    tkInterface:
+      { ignore }
+      ;
     tkClass    : result.FData.FAsObject := PPointer(ABuffer)^;
     tkClassRef : result.FData.FAsClass := PClass(ABuffer)^;
     tkInterfaceRaw : result.FData.FAsPointer := PPointer(ABuffer)^;
-    tkInterface: result.FData.FValueData := TValueDataIntImpl.CreateRef(ABuffer, ATypeInfo, True);
     tkInt64    : result.FData.FAsSInt64 := PInt64(ABuffer)^;
     tkQWord    : result.FData.FAsUInt64 := PQWord(ABuffer)^;
     tkProcVar  : result.FData.FAsMethod.Code := PCodePointer(ABuffer)^;
     tkMethod   : result.FData.FAsMethod := PMethod(ABuffer)^;
     tkPointer  : result.FData.FAsPointer := PPointer(ABuffer)^;
+    tkSet      : begin
+                   td := GetTypeData(ATypeInfo);
+                   case td^.OrdType of
+                     otUByte: begin
+                       { this can either really be 1 Byte or a set > 32-bit, so
+                         check the underlying type }
+                       if not (td^.CompType^.Kind in [tkInteger,tkEnumeration]) then
+                         raise Exception.CreateFmt(SErrUnableToGetValueForType,[ATypeInfo^.Name]);
+                       td := GetTypeData(td^.CompType);
+                       { ToDo: what about PACKSETS? }
+                       size := td^.MaxValue div 8;
+                       case size of
+                         0, 1:
+                           Result.FData.FAsUByte := PByte(ABuffer)^;
+                         { these two cases shouldn't happen, but better safe than sorry... }
+                         2:
+                           Result.FData.FAsUWord := PWord(ABuffer)^;
+                         3, 4:
+                           Result.FData.FAsULong := PLongWord(ABuffer)^;
+                         { maybe we should also allow storage as otUQWord? }
+                         5..8:
+                           Result.FData.FAsUInt64 := PQWord(ABuffer)^;
+                         else
+                           Result.FData.FValueData := TValueDataIntImpl.CreateCopy(ABuffer, size, ATypeInfo, False);
+                       end;
+                     end;
+                     otUWord:
+                       Result.FData.FAsUWord := PWord(ABuffer)^;
+                     otULong:
+                       Result.FData.FAsULong := PLongWord(ABuffer)^;
+                     else
+                       { ehm... Panic? }
+                       raise Exception.CreateFmt(SErrUnableToGetValueForType,[ATypeInfo^.Name]);
+                   end;
+                 end;
+    tkEnumeration,
     tkInteger  : begin
                    case GetTypeData(ATypeInfo)^.OrdType of
                      otSByte: result.FData.FAsSByte := PShortInt(ABuffer)^;
@@ -615,10 +705,10 @@ begin
 end;
 
 function TValue.GetDataSize: SizeInt;
+var
+  td: PTypeData;
 begin
-  if IsEmpty then
-    Result := 0
-  else if Assigned(FData.FValueData) and (Kind <> tkSString) then
+  if Assigned(FData.FValueData) and (Kind <> tkSString) then
     Result := FData.FValueData.GetDataSize
   else begin
     Result := 0;
@@ -658,10 +748,27 @@ begin
             Result := SizeOf(Currency);
         end;
       tkSet:
-        { ToDo }
-        Result := 0;
+        case TypeData^.OrdType of
+          otUByte: begin
+            td := GetTypeData(TypeData^.CompType);
+            Result := td^.MaxValue div 8;
+            case Result of
+              0:
+                Result := SizeOf(Byte);
+              3:
+                Result := SizeOf(LongWord);
+              5..7:
+                Result := SizeOf(QWord);
+            end;
+          end;
+          otUWord:
+            Result := SizeOf(Word);
+          otULong:
+            Result := SizeOf(LongWord);
+          else
+            Result := 0;
+        end;
       tkMethod:
-        { ? }
         Result := SizeOf(TMethod);
       tkSString:
         { ShortString can hold max. 254 characters as [0] is Length and [255] is #0 }
@@ -677,22 +784,24 @@ begin
       tkFile:
         { ToDo }
         Result := SizeOf(TTextRec);
-      tkClass,
-      tkHelper,
-      tkClassRef,
-      tkPointer:
-        Result := SizeOf(Pointer);
-      tkUnknown,
-      tkLString,
       tkAString,
       tkWString,
       tkUString,
-      tkObject,
-      tkArray,
-      tkRecord,
       tkInterface,
       tkDynArray,
-      tkInterfaceRaw:
+      tkClass,
+      tkHelper,
+      tkClassRef,
+      tkInterfaceRaw,
+      tkPointer:
+        Result := SizeOf(Pointer);
+      tkObject,
+      tkRecord:
+        Result := TypeData^.RecSize;
+      tkArray:
+        Result := TypeData^.ArrayData.Size;
+      tkUnknown,
+      tkLString:
         Assert(False);
     end;
   end;
@@ -705,7 +814,10 @@ end;
 
 function TValue.GetTypeKind: TTypeKind;
 begin
-  result := FData.FTypeInfo^.Kind;
+  if not Assigned(FData.FTypeInfo) then
+    Result := tkUnknown
+  else
+    result := FData.FTypeInfo^.Kind;
 end;
 
 function TValue.GetIsEmpty: boolean;
@@ -761,12 +873,12 @@ end;
 
 function TValue.IsObject: boolean;
 begin
-  result := fdata.FTypeInfo^.Kind = tkClass;
+  result := (Kind = tkClass) or ((Kind = tkUnknown) and not Assigned(FData.FAsObject));
 end;
 
 function TValue.IsClass: boolean;
 begin
-  result := (Kind = tkClassRef) or ((Kind = tkClass) and not Assigned(FData.FAsObject));
+  result := (Kind = tkClassRef) or ((Kind in [tkClass,tkUnknown]) and not Assigned(FData.FAsObject));
 end;
 
 function TValue.AsClass: TClass;
@@ -780,7 +892,7 @@ end;
 function TValue.IsOrdinal: boolean;
 begin
   result := (Kind in [tkInteger, tkInt64, tkQWord, tkBool]) or
-            ((Kind in [tkClass, tkClassRef, tkInterfaceRaw]) and not Assigned(FData.FAsPointer));
+            ((Kind in [tkClass, tkClassRef, tkInterfaceRaw, tkUnknown]) and not Assigned(FData.FAsPointer));
 end;
 
 function TValue.AsBoolean: boolean;
@@ -803,7 +915,7 @@ end;
 function TValue.AsOrdinal: Int64;
 begin
   if IsOrdinal then
-    if Kind in [tkClass, tkClassRef, tkInterfaceRaw] then
+    if Kind in [tkClass, tkClassRef, tkInterfaceRaw, tkUnknown] then
       Result := 0
     else
       case TypeData^.OrdType of
@@ -879,7 +991,7 @@ function TValue.AsInterface: IInterface;
 begin
   if Kind = tkInterface then
     Result := PInterface(FData.FValueData.GetReferenceToRawData)^
-  else if (Kind in [tkClass, tkClassRef]) and not Assigned(FData.FAsPointer) then
+  else if (Kind in [tkClass, tkClassRef, tkUnknown]) and not Assigned(FData.FAsPointer) then
     Result := Nil
   else
     raise EInvalidCast.Create(SErrInvalidTypecast);
@@ -970,6 +1082,8 @@ begin
 end;
 
 function TValue.GetReferenceToRawData: Pointer;
+var
+  td: PTypeData;
 begin
   if IsEmpty then
     Result := Nil
@@ -980,7 +1094,6 @@ begin
     case Kind of
       tkInteger,
       tkEnumeration,
-      tkSet,
       tkInt64,
       tkQWord,
       tkBool:
@@ -1002,6 +1115,32 @@ begin
           otUQWord:
             Result := @FData.FAsUInt64;
         end;
+      tkSet: begin
+        case TypeData^.OrdType of
+          otUByte: begin
+            td := GetTypeData(TypeData^.CompType);
+            case td^.MaxValue div 8 of
+              0, 1:
+                Result := @FData.FAsUByte;
+              2:
+                Result := @FData.FAsUWord;
+              3, 4:
+                Result := @FData.FAsULong;
+              5..8:
+                Result := @FData.FAsUInt64;
+              else
+                { this should have gone through FAsValueData :/ }
+                Result := Nil;
+            end;
+          end;
+          otUWord:
+            Result := @FData.FAsUWord;
+          otULong:
+            Result := @FData.FAsULong;
+          else
+            Result := Nil;
+        end;
+      end;
       tkChar:
         Result := @FData.FAsUByte;
       tkFloat:
