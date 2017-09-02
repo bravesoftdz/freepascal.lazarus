@@ -1,4 +1,4 @@
-{  $Id: debugmanager.pas 55550 2017-07-20 16:46:08Z juha $  }
+{  $Id: debugmanager.pas 55772 2017-09-02 09:14:57Z mattias $  }
 {
  /***************************************************************************
                              debugmanager.pp
@@ -3025,6 +3025,7 @@ end;
 
 initialization
   DBG_LOCATION_INFO := DebugLogger.FindOrRegisterLogGroup('DBG_LOCATION_INFO' {$IFDEF DBG_LOCATION_INFO} , True {$ENDIF} );
+  if DBG_LOCATION_INFO=nil then ;
 
 end.
 
