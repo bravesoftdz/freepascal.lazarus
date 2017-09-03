@@ -123,6 +123,7 @@ Works:
   - as function result
   - as parameter
   - Delphi without @
+  - @@ operator
   - FPC equal and not equal
   - "is nested"
   - bark on arguments access mismatch
@@ -156,7 +157,6 @@ ToDo:
   - case-of unique
   - defaultvalue
   - stored
-- @@
 - fail to write a loop var inside the loop
 - warn: create class with abstract methods
 - classes - TPasClassType
@@ -1325,6 +1325,8 @@ type
     function CheckAssignCompatibility(const LHS, RHS: TPasElement;
       RaiseOnIncompatible: boolean = true): integer;
     procedure CheckAssignExprRange(const LeftResolved: TPasResolverResult; RHS: TPasExpr);
+    procedure CheckAssignExprRangeToCustom(const LeftResolved: TPasResolverResult;
+      RValue: TResEvalValue; RHS: TPasExpr); virtual;
     function CheckAssignResCompatibility(const LHS, RHS: TPasResolverResult;
       ErrorEl: TPasElement; RaiseOnIncompatible: boolean): integer;
     function CheckEqualElCompatibility(Left, Right: TPasElement;
@@ -3385,10 +3387,8 @@ end;
 procedure TPasResolver.FinishConstRangeExpr(Left, Right: TPasExpr; out LeftResolved,
   RightResolved: TPasResolverResult);
 // for example Left..Right
-{$IFDEF EnablePasResRangeCheck}
 var
   RgValue: TResEvalValue;
-{$ENDIF}
 begin
   {$IFDEF VerbosePasResEval}
   writeln('TPasResolver.FinishConstRangeExpr Left=',GetObjName(Left),' Right=',GetObjName(Right));
@@ -3398,10 +3398,8 @@ begin
   ComputeElement(Right,RightResolved,[rcSkipTypeAlias,rcConstant]);
   CheckSetLitElCompatible(Left,Right,LeftResolved,RightResolved);
 
-  {$IFDEF EnablePasResRangeCheck}
   RgValue:=Eval(Left.Parent as TBinaryExpr,[refConst]);
   ReleaseEvalValue(RgValue);
-  {$ENDIF}
 end;
 
 procedure TPasResolver.FinishRecordType(El: TPasRecordType);
@@ -3455,9 +3453,7 @@ begin
   if El.VarType<>nil then
     CheckAssignCompatibility(El,El.Expr,true)
   else
-    {$IFDEF EnablePasResRangeCheck}
     Eval(El.Expr,[refConst])
-    {$ENDIF} ;
 end;
 
 procedure TPasResolver.FinishProcedure(aProc: TPasProcedure);
@@ -4807,9 +4803,7 @@ begin
   akDefault:
     begin
     CheckAssignResCompatibility(LeftResolved,RightResolved,El.right,true);
-    {$IFDEF EnablePasResRangeCheck}
     CheckAssignExprRange(LeftResolved,El.right);
-    {$ENDIF}
     end;
   akAdd, akMinus,akMul,akDivision:
     begin
@@ -4852,9 +4846,7 @@ begin
     else
       RaiseMsg(20170216152125,nIllegalQualifier,sIllegalQualifier,[AssignKindNames[El.Kind]],El);
     // store const expression result
-    {$IFDEF EnablePasResRangeCheck}
     Eval(El.right,[]);
-    {$ENDIF}
     end;
   else
     RaiseNotYetImplemented(20160927143649,El,'AssignKind '+AssignKindNames[El.Kind]);
@@ -7796,9 +7788,6 @@ function TPasResolver.Eval(Expr: TPasExpr; Flags: TResEvalFlags;
 // Important: Caller must free result if (Result<>nil) and (Result.Element=nil)
 //            use utility function ReleaseEvalValue(Result)
 begin
-  {$IFNDEF EnablePasResRangeCheck}
-  exit(nil);
-  {$ENDIF}
   Result:=fExprEvaluator.Eval(Expr,Flags);
   if Result=nil then exit;
   {$IFDEF VerbosePasResEval}
@@ -10585,9 +10574,7 @@ var
   NextType: TPasType;
   RangeExpr: TPasExpr;
   TypeFits: Boolean;
-  {$IFDEF EnablePasResRangeCheck}
   ParamValue: TResEvalValue;
-  {$ENDIF}
 begin
   ArgNo:=0;
   repeat
@@ -10600,7 +10587,6 @@ begin
         exit(CheckRaiseTypeArgNo(20170216152417,ArgNo,Param,ParamResolved,'integer',RaiseOnError));
       if EmitHints then
         begin
-        {$IFDEF EnablePasResRangeCheck}
         ParamValue:=Eval(Param,[refAutoConst]);
         if ParamValue<>nil then
           try // has const value -> check range
@@ -10612,7 +10598,6 @@ begin
           finally
             ReleaseEvalValue(ParamValue);
           end;
-        {$ENDIF}
         end;
       end
     else
@@ -10652,10 +10637,8 @@ begin
           RaiseIncompatibleTypeRes(20170216152422,nIncompatibleTypeArgNo,
             [IntToStr(ArgNo)],ParamResolved,RangeResolved,Param);
           end;
-        {$IFDEF EnablePasResRangeCheck}
         if EmitHints then
           fExprEvaluator.IsInRange(Param,RangeExpr,true);
-        {$ENDIF}
         end;
       end;
     if ArgNo=length(Params.Params) then exit(cExact);
@@ -10762,7 +10745,14 @@ begin
     end;
   ProcArgs1:=Proc1.Args;
   ProcArgs2:=Proc2.Args;
-  if ProcArgs1.Count<>ProcArgs2.Count then exit;
+  if ProcArgs1.Count<>ProcArgs2.Count then
+    begin
+    if RaiseOnIncompatible then
+      RaiseMsg(20170902142829,nIncompatibleTypesGotParametersExpected,
+        sIncompatibleTypesGotParametersExpected,
+        [IntToStr(ProcArgs1.Count),IntToStr(ProcArgs2.Count)],ErrorEl);
+    exit;
+    end;
   for i:=0 to ProcArgs1.Count-1 do
     begin
     {$IFDEF VerbosePasResolver}
@@ -10901,11 +10891,7 @@ begin
   ComputeElement(RHS,RightResolved,Flags);
   Result:=CheckAssignResCompatibility(LeftResolved,RightResolved,RHS,RaiseOnIncompatible);
   if RHS is TPasExpr then
-    begin
-    {$IFDEF EnablePasResRangeCheck}
     CheckAssignExprRange(LeftResolved,TPasExpr(RHS));
-    {$ENDIF}
-    end;
 end;
 
 procedure TPasResolver.CheckAssignExprRange(
@@ -10921,9 +10907,6 @@ var
   bt: TResolverBaseType;
   w: WideChar;
 begin
-  {$IFNDEF EnablePasResRangeCheck}
-  exit;
-  {$ENDIF}
   RValue:=Eval(RHS,[refAutoConst]);
   if RValue=nil then
     exit; // not a const expression
@@ -10932,7 +10915,9 @@ begin
   {$ENDIF}
   RangeValue:=nil;
   try
-    if LeftResolved.BaseType=btSet then
+    if LeftResolved.BaseType=btCustom then
+      CheckAssignExprRangeToCustom(LeftResolved,RValue,RHS)
+    else if LeftResolved.BaseType=btSet then
       begin
       // assign to a set
       C:=LeftResolved.TypeEl.ClassType;
@@ -11004,7 +10989,9 @@ begin
           end
         else
           begin
-          writeln('AAA1 TPasResolver.CheckAssignExprRange ',Frac(TResEvalFloat(RValue).FloatValue),' ',TResEvalFloat(RValue).FloatValue<MaxPrecFloat(low(MaxPrecInt)),' ',TResEvalFloat(RValue).FloatValue>MaxPrecFloat(high(MaxPrecInt)),' ',TResEvalFloat(RValue).FloatValue,' ',high(MaxPrecInt));
+          {$IFDEF VerbosePasResEval}
+          writeln('TPasResolver.CheckAssignExprRange ',Frac(TResEvalFloat(RValue).FloatValue),' ',TResEvalFloat(RValue).FloatValue<MaxPrecFloat(low(MaxPrecInt)),' ',TResEvalFloat(RValue).FloatValue>MaxPrecFloat(high(MaxPrecInt)),' ',TResEvalFloat(RValue).FloatValue,' ',high(MaxPrecInt));
+          {$ENDIF}
           RaiseRangeCheck(20170802133750,RHS);
           end;
       else
@@ -11073,6 +11060,14 @@ begin
     ReleaseEvalValue(RValue);
     ReleaseEvalValue(RangeValue);
   end;
+end;
+
+procedure TPasResolver.CheckAssignExprRangeToCustom(
+  const LeftResolved: TPasResolverResult; RValue: TResEvalValue; RHS: TPasExpr);
+begin
+  if LeftResolved.BaseType<>btCustom then exit;
+  if RValue=nil then exit;
+  if RHS=nil then ;
 end;
 
 function TPasResolver.CheckAssignResCompatibility(const LHS,
@@ -11279,7 +11274,7 @@ begin
         // for example  ProcVar:=Proc
         if CheckProcTypeCompatibility(TPasProcedureType(LHS.TypeEl),
             TPasProcedure(RHS.IdentEl).ProcType,true,ErrorEl,RaiseOnIncompatible) then
-          Result:=cExact;
+          exit(cExact);
         end;
       end
     else if LBT=btPointer then
@@ -11413,7 +11408,7 @@ begin
   if RErrorEl=nil then RErrorEl:=LErrorEl;
   // check if the RHS is type compatible to LHS
   {$IFDEF VerbosePasResolver}
-  writeln('TPasResolver.CheckEqualCompatibility LHS=',GetResolverResultDbg(LHS),' RHS=',GetResolverResultDbg(RHS));
+  writeln('TPasResolver.CheckEqualResCompatibility LHS=',GetResolverResultDbg(LHS),' RHS=',GetResolverResultDbg(RHS));
   {$ENDIF}
   if not (rrfReadable in LHS.Flags) then
     begin
@@ -12880,7 +12875,7 @@ begin
     ComputeBinaryExpr(TBinaryExpr(El),ResolvedEl,Flags,StartEl)
   else if ElClass=TUnaryExpr then
     begin
-    if TUnaryExpr(El).OpCode=eopAddress then
+    if TUnaryExpr(El).OpCode in [eopAddress,eopMemAddress] then
       ComputeElement(TUnaryExpr(El).Operand,ResolvedEl,Flags+[rcNoImplicitProc],StartEl)
     else
       ComputeElement(TUnaryExpr(El).Operand,ResolvedEl,Flags,StartEl);
@@ -12906,6 +12901,13 @@ begin
           end
         else
           RaiseMsg(20170216152535,nIllegalQualifier,sIllegalQualifier,[OpcodeStrings[TUnaryExpr(El).OpCode]],El);
+      eopMemAddress:
+        begin
+        if (ResolvedEl.BaseType=btContext) and (ResolvedEl.TypeEl is TPasProcedureType) then
+          exit
+        else
+          RaiseMsg(20170902145547,nIllegalQualifier,sIllegalQualifier,[OpcodeStrings[TUnaryExpr(El).OpCode]],El);
+        end;
     end;
     RaiseNotYetImplemented(20160926142426,El);
     end
@@ -13429,9 +13431,7 @@ function TPasResolver.GetRangeLength(const RangeResolved: TPasResolverResult
   ): MaxPrecInt;
 var
   TypeEl: TPasType;
-  {$IFDEF EnablePasResRangeCheck}
   Value: TResEvalValue;
-  {$ENDIF}
 begin
   Result:=0;
   if RangeResolved.BaseType=btContext then
@@ -13448,7 +13448,6 @@ begin
     end
   else if RangeResolved.ExprEl<>nil then
     begin
-    {$IFDEF EnablePasResRangeCheck}
     Value:=Eval(RangeResolved.ExprEl,[]);
     if Value=nil then
       RaiseMsg(20170729094135,nIncompatibleTypesGotExpected,
@@ -13466,9 +13465,6 @@ begin
     finally
       ReleaseEvalValue(Value);
     end;
-    {$ELSE}
-    Result:=2;
-    {$ENDIF}
     end
   else if RangeResolved.BaseType in btAllBooleans then
     Result:=2;

@@ -565,6 +565,7 @@ type
     Procedure TestProcTypeCall;
     Procedure TestProcType_FunctionFPC;
     Procedure TestProcType_FunctionDelphi;
+    Procedure TestProcType_ProcedureDelphi;
     Procedure TestProcType_MethodFPC;
     Procedure TestProcType_MethodDelphi;
     Procedure TestAssignProcToMethodFail;
@@ -2320,10 +2321,8 @@ begin
   Add('type');
   Add('  {#TMyInt}TMyInt = MaxInt..MinInt;');
   Add('begin');
-  {$IFDEF EnablePasResRangeCheck}
   CheckResolverException(sHighRangeLimitLTLowRangeLimit,
     nHighRangeLimitLTLowRangeLimit);
-  {$ENDIF}
 end;
 
 procedure TTestResolver.TestIntegerRangeLowHigh;
@@ -2350,11 +2349,9 @@ begin
   'begin',
   '  i:=3;']);
   ParseProgram;
-  {$IFDEF EnablePasResRangeCheck}
   CheckResolverHint(mtWarning,nRangeCheckEvaluatingConstantsVMinMax,
     'range check error while evaluating constants (3 must be between 1 and 2)');
   CheckResolverUnexpectedHints;
-  {$ENDIF}
 end;
 
 procedure TTestResolver.TestByteRangeFail;
@@ -2364,11 +2361,9 @@ begin
   'var b:byte=300;',
   'begin']);
   ParseProgram;
-  {$IFDEF EnablePasResRangeCheck}
   CheckResolverHint(mtWarning,nRangeCheckEvaluatingConstantsVMinMax,
     'range check error while evaluating constants (300 must be between 0 and 255)');
   CheckResolverUnexpectedHints;
-  {$ENDIF}
 end;
 
 procedure TTestResolver.TestCustomIntRangeFail;
@@ -2378,11 +2373,9 @@ begin
   'const i:1..2 = 3;',
   'begin']);
   ParseProgram;
-  {$IFDEF EnablePasResRangeCheck}
   CheckResolverHint(mtWarning,nRangeCheckEvaluatingConstantsVMinMax,
     'range check error while evaluating constants (3 must be between 1 and 2)');
   CheckResolverUnexpectedHints;
-  {$ENDIF}
 end;
 
 procedure TTestResolver.TestIntSet_Const;
@@ -2412,14 +2405,12 @@ end;
 
 procedure TTestResolver.TestIntSet_ConstDuplicateElement;
 begin
-  {$IFDEF EnablePasResRangeCheck}
   StartProgram(false);
   Add([
   'const',
   '  s1 = [1,1..2];',
   'begin']);
   CheckResolverException(sRangeCheckInSetConstructor,nRangeCheckInSetConstructor);
-  {$ENDIF}
 end;
 
 procedure TTestResolver.TestChar_Ord;
@@ -3782,13 +3773,13 @@ begin
   Add('    {@v1}v1:={@e1}e;');
   Add('  finally');
   Add('    {@v1}v1:={@e1}e;');
-  Add('  end');
+  Add('  end;');
   Add('  try');
   Add('    {@v1}v1:={@e1}e;');
   Add('  except');
   Add('    {@v1}v1:={@e1}e;');
   Add('    raise;');
-  Add('  end');
+  Add('  end;');
   Add('  try');
   Add('    {@v1}v1:={@e1}e;');
   Add('  except');
@@ -3798,7 +3789,7 @@ begin
   Add('      raise {@e3}e;');
   Add('    else');
   Add('      {@v1}v1:={@e1}e;');
-  Add('  end');
+  Add('  end;');
   ParseProgram;
 end;
 
@@ -4664,8 +4655,8 @@ begin
   Add('  {#A}{=TA}A: TClassA;');
   Add('  {#B}{=TB}B: TClassB;');
   Add('begin');
-  Add('  {@DoA}DoIt({@A}A)');
-  Add('  {@DoB}DoIt({@B}B)');
+  Add('  {@DoA}DoIt({@A}A);');
+  Add('  {@DoB}DoIt({@B}B);');
   ParseProgram;
 end;
 
@@ -4688,9 +4679,9 @@ begin
   Add('  {#B}{=TB}B: TClassB;');
   Add('  {#C}{=TC}C: TClassC;');
   Add('begin');
-  Add('  {@DoA}DoIt({@A}A)');
-  Add('  {@DoB}DoIt({@B}B)');
-  Add('  {@DoB}DoIt({@C}C)');
+  Add('  {@DoA}DoIt({@A}A);');
+  Add('  {@DoB}DoIt({@B}B);');
+  Add('  {@DoB}DoIt({@C}C);');
   ParseProgram;
 end;
 
@@ -4713,9 +4704,9 @@ begin
   Add('  {#B}{=TB}B: TClassB;');
   Add('  {#C}{=TC}C: TClassC;');
   Add('begin');
-  Add('  {@DoA}DoIt({@A}A)');
-  Add('  {@DoA}DoIt({@B}B)');
-  Add('  {@DoC}DoIt({@C}C)');
+  Add('  {@DoA}DoIt({@A}A);');
+  Add('  {@DoA}DoIt({@B}B);');
+  Add('  {@DoC}DoIt({@C}C);');
   ParseProgram;
 end;
 
@@ -8936,7 +8927,6 @@ end;
 
 procedure TTestResolver.TestArray_Static_Const;
 begin
-  {$IFDEF EnablePasResRangeCheck}
   StartProgram(false);
   Add([
   'type',
@@ -8947,7 +8937,6 @@ begin
   'begin']);
   ParseProgram;
   CheckResolverUnexpectedHints;
-  {$ENDIF}
 end;
 
 procedure TTestResolver.TestArrayIntRange_OutOfRange;
@@ -8960,10 +8949,8 @@ begin
   '  a[0]:=3;',
   '']);
   ParseProgram;
-  {$IFDEF EnablePasResRangeCheck}
   CheckResolverHint(mtWarning,nRangeCheckEvaluatingConstantsVMinMax,
     'range check error while evaluating constants (0 must be between 1 and 2)');
-  {$ENDIF}
   CheckResolverUnexpectedHints;
 end;
 
@@ -8977,10 +8964,8 @@ begin
   '  a[''0'']:=3;',
   '']);
   ParseProgram;
-  {$IFDEF EnablePasResRangeCheck}
   CheckResolverHint(mtWarning,nRangeCheckEvaluatingConstantsVMinMax,
     'range check error while evaluating constants (''0'' must be between ''a'' and ''b'')');
-  {$ENDIF}
   CheckResolverUnexpectedHints;
 end;
 
@@ -9076,7 +9061,7 @@ begin
   Add('end;');
   Add('var o: TObject;');
   Add('begin');
-  Add('  o.OnClick:=@o.Notify');
+  Add('  o.OnClick:=@o.Notify;');
   Add('  o.OnClick(nil);');
   Add('  o.OnClick(o);');
   Add('  o.SetOnClick(@o.Notify);');
@@ -9202,6 +9187,7 @@ begin
   Add('var');
   Add('  b: boolean;');
   Add('  vP, vQ: tfuncint;');
+  Add('  ');
   Add('begin');
   Add('  vp:=nil;');
   Add('  vp:=vp;');
@@ -9228,6 +9214,55 @@ begin
   Add('  doit(vp);'); // illegal in fpc, ok in delphi
   Add('  doit(vp());'); // ok in fpc and delphi
   Add('  doit(vp(2));'); // ok in fpc and delphi  *)
+  ParseProgram;
+end;
+
+procedure TTestResolver.TestProcType_ProcedureDelphi;
+begin
+  StartProgram(false);
+  Add('{$mode Delphi}');
+  Add('type');
+  Add('  TProc = procedure;');
+  Add('procedure Doit;');
+  Add('begin end;');
+  Add('var');
+  Add('  b: boolean;');
+  Add('  vP, vQ: tproc;');
+  Add('begin');
+  Add('  vp:=nil;');
+  Add('  vp:=vp;');
+  Add('  vp:=vq;');
+  Add('  vp:=@doit;'); // ok in fpc and delphi, Note that in Delphi type of @F is Pointer, while in FPC it is the proc type
+  Add('  vp:=doit;'); // illegal in fpc, ok in delphi
+  //Add('  vp:=@doit;'); // illegal in fpc, ok in delphi (because Delphi treats @F as Pointer), not supported by resolver
+  Add('  vp;'); // ok in fpc and delphi
+  Add('  vp();');
+
+  // equal
+  //Add('  b:=vp=nil;'); // ok in fpc, illegal in delphi
+  Add('  b:=@@vp=nil;'); // ok in fpc delphi mode, ok in delphi
+  //Add('  b:=nil=vp;'); // ok in fpc, illegal in delphi
+  Add('  b:=nil=@@vp;'); // ok in fpc delphi mode, ok in delphi
+  Add('  b:=@@vp=@@vq;'); // ok in fpc delphi mode, ok in Delphi
+  //Add('  b:=vp=vq;'); // in fpc compare proctypes, in delphi compare results
+  //Add('  b:=vp=@doit;'); // ok in fpc, illegal in delphi
+  Add('  b:=@@vp=@doit;'); // ok in fpc delphi mode, ok in delphi
+  //Add('  b:=@doit=vp;'); // ok in fpc, illegal in delphi
+  Add('  b:=@doit=@@vp;'); // ok in fpc delphi mode, ok in delphi
+
+  // unequal
+  //Add('  b:=vp<>nil;'); // ok in fpc, illegal in delphi
+  Add('  b:=@@vp<>nil;'); // ok in fpc mode delphi, ok in delphi
+  //Add('  b:=nil<>vp;'); // ok in fpc, illegal in delphi
+  Add('  b:=nil<>@@vp;'); // ok in fpc mode delphi, ok in delphi
+  //Add('  b:=vp<>vq;'); // in fpc compare proctypes, in delphi compare results
+  Add('  b:=@@vp<>@@vq;'); // ok in fpc mode delphi, ok in delphi
+  //Add('  b:=vp<>@doit;'); // ok in fpc, illegal in delphi
+  Add('  b:=@@vp<>@doit;'); // ok in fpc mode delphi, illegal in delphi
+  //Add('  b:=@doit<>vp;'); // ok in fpc, illegal in delphi
+  Add('  b:=@doit<>@@vp;'); // ok in fpc mode delphi, illegal in delphi
+
+  Add('  b:=Assigned(vp);');
   ParseProgram;
 end;
 
@@ -9753,7 +9788,7 @@ begin
   Add('procedure TControl.Click(Sender: TObject);');
   Add('begin');
   Add('  if Assigned(OnClick) then ;');
-  Add('  OnClick:=@Click');
+  Add('  OnClick:=@Click;');
   Add('  OnClick(Sender);');
   Add('  Self.OnClick(Sender);');
   Add('  with Self do OnClick(Sender);');
@@ -9905,7 +9940,7 @@ begin
   Add('  p:=a;');
   Add('  p:=Pointer(f);');
   Add('  p:=@DoIt;');
-  Add('  p:=Pointer(@DoIt)');
+  Add('  p:=Pointer(@DoIt);');
   Add('  obj:=TObject(p);');
   Add('  cl:=TClass(p);');
   Add('  a:=TArrInt(p);');

@@ -350,6 +350,7 @@ type
     procedure CheckTokens(tk: TTokens);
     procedure ExpectToken(tk: TToken);
     procedure ExpectTokens(tk:  TTokens);
+    function GetPrevToken: TToken;
     function ExpectIdentifier: String;
     Function CurTokenIsIdentifier(Const S : String) : Boolean;
     // Expression parsing
@@ -1047,6 +1048,22 @@ begin
   CheckTokens(tk);
 end;
 
+function TPasParser.GetPrevToken: TToken;
+var
+  i: Integer;
+  P: PTokenRec;
+begin
+  if FTokenRingStart = FTokenRingEnd then
+    Result:=tkEOF;
+  i:=FTokenRingCur;
+  if i>0 then
+    dec(i)
+  else
+    i:=High(FTokenRing);
+  P:=@FTokenRing[i];
+  Result := P^.Token;
+end;
+
 function TPasParser.ExpectIdentifier: String;
 begin
   ExpectToken(tkIdentifier);
@@ -1057,7 +1074,6 @@ function TPasParser.CurTokenIsIdentifier(const S: String): Boolean;
 begin
   Result:=(Curtoken=tkIdentifier) and (CompareText(S,CurtokenText)=0);
 end;
-
 
 function TPasParser.IsCurTokenHint(out AHint: TPasMemberHint): Boolean;
 begin
@@ -1877,6 +1893,7 @@ begin
     tkEqual                 : Result:=eopEqual;
     tkGreaterThan           : Result:=eopGreaterThan;
     tkAt                    : Result:=eopAddress;
+    tkAtAt                  : Result:=eopMemAddress;
     tkNotEqual              : Result:=eopNotEqual;
     tkLessEqualThan         : Result:=eopLessthanEqual;
     tkGreaterEqualThan      : Result:=eopGreaterThanEqual;
@@ -2046,18 +2063,6 @@ begin
       Last:=CreateSelfExpr(AParent);
       HandleSelf(Last);
       end;
-    tkAt:
-      begin
-      // is this still needed?
-      // P:=@function;
-      NextToken;
-      if (length(CurTokenText)=0) or not (CurTokenText[1] in ['A'..'_']) then
-        begin
-        UngetToken;
-        ParseExcExpectedIdentifier;
-        end;
-      Last:=CreatePrimitiveExpr(AParent,pekString, '@'+CurTokenText);
-      end;
     tkCaret:
       begin
       // is this still needed?
@@ -2155,7 +2160,7 @@ begin
   case t of
   //  tkDot:
   //    Result:=5;
-    tknot,tkAt:
+    tknot,tkAt,tkAtAt:
       Result:=4;
     tkMul, tkDivision, tkdiv, tkmod, tkand, tkShl,tkShr, tkas, tkPower :
       Result:=3;
@@ -2180,7 +2185,7 @@ var
   NotBinary : Boolean;
 
 const
-  PrefixSym = [tkPlus, tkMinus, tknot, tkAt]; // + - not @
+  PrefixSym = [tkPlus, tkMinus, tknot, tkAt, tkAtAt]; // + - not @
   BinaryOP  = [tkMul, tkDivision, tkdiv, tkmod,  tkDotDot,
                tkand, tkShl,tkShr, tkas, tkPower,
                tkPlus, tkMinus, tkor, tkxor, tkSymmetricalDifference,
@@ -2822,7 +2827,6 @@ begin
         ExpectToken(tkend);
     end;
   until false;
-  UngetToken;
 end;
 
 function TPasParser.GetProcTypeFromToken(tk: TToken; IsClass: Boolean
@@ -4659,7 +4663,7 @@ Var
   Function atEndOfAsm : Boolean;
 
   begin
-    Result:=(CurToken=tkEnd) and (LastToken<>tkAt);
+    Result:=(CurToken=tkEnd) and not (LastToken in [tkAt,tkAtAt]);
   end;
 
 begin
@@ -4753,9 +4757,30 @@ var
     if NewImplElement=nil then NewImplElement:=CurBlock;
   end;
 
+  procedure CheckSemicolon;
+  begin
+    if (CurBlock.Elements.Count>0) and not (GetPrevToken in [tkSemicolon,tkColon])
+        and (CurBlock.ClassType<>TPasImplIfElse) then
+      begin
+      {$IFDEF VerbosePasParser}
+      writeln('TPasParser.ParseStatement.CheckSemicolon Prev=',GetPrevToken,' Cur=',CurToken,' ',CurBlock.ClassName,' ',CurBlock.Elements.Count,' ',TObject(CurBlock.Elements[0]).ClassName);
+      {$ENDIF}
+      ParseExcTokenError('Semicolon');
+      end;
+  end;
+
+var
+  CmdElem: TPasImplElement;
+
+  procedure AddStatement(El: TPasImplElement);
+  begin
+    CurBlock.AddElement(El);
+    CmdElem:=El;
+    UngetToken;
+  end;
+
 var
   SubBlock: TPasImplElement;
-  CmdElem: TPasImplElement;
   left, right: TPasExpr;
   El : TPasImplElement;
   ak : TAssignKind;
@@ -4775,6 +4800,7 @@ begin
     case CurToken of
     tkasm:
       begin
+      CheckSemicolon;
       El:=TPasImplElement(CreateElement(TPasImplAsmStatement,'',CurBlock));
       ParseAsmBlock(TPasImplAsmStatement(El));
       CurBlock.AddElement(El);
@@ -4784,16 +4810,19 @@ begin
       end;
     tkbegin:
       begin
+      CheckSemicolon;
       El:=TPasImplElement(CreateElement(TPasImplBeginBlock,'',CurBlock));
       CreateBlock(TPasImplBeginBlock(El));
       end;
     tkrepeat:
       begin
+      CheckSemicolon;
       El:=TPasImplRepeatUntil(CreateElement(TPasImplRepeatUntil,'',CurBlock));
       CreateBlock(TPasImplRepeatUntil(El));
       end;
     tkIf:
       begin
+        CheckSemicolon;
         NextToken;
         Left:=DoParseExpression(CurBlock);
         UngetToken;
@@ -4864,6 +4893,7 @@ begin
     tkwhile:
       begin
         // while Condition do
+        CheckSemicolon;
         NextToken;
         left:=DoParseExpression(CurBlock);
         UngetToken;
@@ -4875,14 +4905,16 @@ begin
       end;
     tkgoto:
       begin
-        NextToken;
-        curblock.AddCommand('goto '+curtokenstring);
-        // expecttoken(tkSemiColon);
+      CheckSemicolon;
+      NextToken;
+      CurBlock.AddCommand('goto '+curtokenstring);
+      // expecttoken(tkSemiColon);
       end;
     tkfor:
       begin
         // for VarName := StartValue to EndValue do
         // for VarName in Expression do
+        CheckSemicolon;
         El:=TPasImplForLoop(CreateElement(TPasImplForLoop,'',CurBlock));
         ok:=false;
         Try
@@ -4939,6 +4971,7 @@ begin
       begin
         // with Expr do
         // with Expr, Expr do
+        CheckSemicolon;
         SrcPos:=CurSourcePos;
         NextToken;
         Left:=DoParseExpression(CurBlock);
@@ -4959,6 +4992,7 @@ begin
       end;
     tkcase:
       begin
+        CheckSemicolon;
         NextToken;
         Left:=DoParseExpression(CurBlock);
         UngetToken;
@@ -5036,6 +5070,7 @@ begin
       end;
     tktry:
       begin
+      CheckSemicolon;
       El:=TPasImplTry(CreateElement(TPasImplTry,'',CurBlock));
       CreateBlock(TPasImplTry(El));
       end;
@@ -5072,6 +5107,7 @@ begin
       end;
     tkraise:
       begin
+      CheckSemicolon;
       El:=TPasImplRaise(CreateElement(TPasImplRaise,'',CurBlock));
       CreateBlock(TPasImplRaise(El));
       NextToken;
@@ -5116,7 +5152,11 @@ begin
     tkSemiColon:
       if CloseStatement(true) then break;
     tkFinalization:
-      if CloseStatement(true) then break;
+      if CloseStatement(true) then
+        begin
+        UngetToken;
+        break;
+        end;
     tkuntil:
       begin
         if CloseStatement(true) then
@@ -5137,11 +5177,13 @@ begin
       end;
     tkEOF:
       CheckToken(tkend);
-    tkAt,tkBraceOpen,tkIdentifier,tkNumber,tkSquaredBraceOpen,tkMinus,tkPlus,tkinherited:
+    tkAt,tkAtAt,tkBraceOpen,tkIdentifier,tkNumber,tkSquaredBraceOpen,tkMinus,tkPlus,tkinherited:
       begin
-// This should in fact not be checked here.
-//      if (CurToken=tkAt) and not (msDelphi in CurrentModeswitches) then
-//        ParseExc;
+      // Do not check this here:
+      //      if (CurToken=tkAt) and not (msDelphi in CurrentModeswitches) then
+      //        ParseExc;
+      CheckSemicolon;
+
       // On is usable as an identifier
       if lowerCase(CurTokenText)='on' then
         begin
@@ -5199,9 +5241,7 @@ begin
             TPasImplAssign(El).left:=Left;
             TPasImplAssign(El).right:=Right;
             TPasImplAssign(El).Kind:=ak;
-            CurBlock.AddElement(El);
-            CmdElem:=TPasImplAssign(El);
-            UngetToken;
+            AddStatement(El);
           end;
           tkColon:
           begin
@@ -5218,9 +5258,7 @@ begin
           // simple statement (function call)
           El:=TPasImplSimple(CreateElement(TPasImplSimple,'',CurBlock));
           TPasImplSimple(El).expr:=Left;
-          CurBlock.AddElement(El);
-          CmdElem:=TPasImplSimple(El);
-          UngetToken;
+          AddStatement(El);
         end;
 
         if not (CmdElem is TPasImplLabelMark) then

@@ -1,5 +1,5 @@
 {%MainUnit qtint.pp}
-{ $Id: qtwinapi.inc 55222 2017-06-04 21:52:26Z juha $ }
+{ $Id: qtwinapi.inc 55774 2017-09-02 18:13:58Z zeljko $ }
 {******************************************************************************
   All QT Winapi implementations.
   This are the implementations of the overrides of the QT Interface for the
@@ -4957,7 +4957,9 @@ end;
 
 function TQtWidgetSet.IsIconic(Handle: HWND): boolean;
 begin
-  Result := TQtWidget(Handle).isMinimized;
+  Result := False;
+  if IsValidHandle(Handle) then
+    Result := TQtWidget(Handle).isMinimized;
 end;
 
 function TQtWidgetSet.IsWindow(handle: HWND): boolean;
@@ -4967,17 +4969,23 @@ end;
 
 function TQtWidgetSet.IsWindowEnabled(Handle: HWND): boolean;
 begin
-  Result := TQtWidget(Handle).getEnabled and TQtWidget(Handle).getVisible;
+  Result := False;
+  if IsValidHandle(Handle) then
+    Result := TQtWidget(Handle).getEnabled and TQtWidget(Handle).getVisible;
 end;
 
 function TQtWidgetSet.IsWindowVisible(Handle: HWND): boolean;
 begin
-  Result := TQtWidget(Handle).getVisible;
+  Result := False;
+  if IsValidHandle(Handle) then
+    Result := TQtWidget(Handle).getVisible;
 end;
 
 function TQtWidgetSet.IsZoomed(Handle: HWND): boolean;
 begin
-  Result := TQtWidget(Handle).isMaximized;
+  Result := False;
+  if IsValidHandle(Handle) then
+    Result := TQtWidget(Handle).isMaximized;
 end;
 
 {------------------------------------------------------------------------------

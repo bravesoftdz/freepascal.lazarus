@@ -925,6 +925,9 @@ type
     function ExtractPasStringLiteral(El: TPasElement; const S: String): TJSString; virtual;
     function ComputeConst(Expr: TPasExpr; StoreCustomData: boolean): TJSValue; virtual;
     function ComputeConstString(Expr: TPasExpr; StoreCustomData, NotEmpty: boolean): String; virtual;
+    procedure CheckAssignExprRangeToCustom(
+      const LeftResolved: TPasResolverResult; RValue: TResEvalValue;
+      RHS: TPasExpr); override;
     // CustomData
     function GetElementData(El: TPasElementBase;
       DataClass: TPas2JsElementDataClass): TPas2JsElementData; virtual;
@@ -3022,6 +3025,32 @@ begin
   Result:=String(V.AsString);
 end;
 
+procedure TPas2JSResolver.CheckAssignExprRangeToCustom(
+  const LeftResolved: TPasResolverResult; RValue: TResEvalValue; RHS: TPasExpr);
+var
+  LeftBaseType: TPas2jsBaseType;
+begin
+  if (LeftResolved.BaseType<>btCustom) then
+    exit;
+  if not (LeftResolved.TypeEl is TPasUnresolvedSymbolRef) then
+    begin
+    {$IFDEF VerbosePas2JS}
+    writeln('TPas2JSResolver.CheckAssignExprRangeToCustom LeftResolved=',GetResolverResultDbg(LeftResolved));
+    {$ENDIF}
+    RaiseInternalError(20170902165913);
+    end;
+  if not (LeftResolved.TypeEl.CustomData is TResElDataPas2JSBaseType) then
+    exit;
+  LeftBaseType:=TResElDataPas2JSBaseType(LeftResolved.TypeEl.CustomData).JSBaseType;
+  if LeftBaseType=pbtJSValue then
+    // jsvalue:=someconst   ->  ok
+  else
+    RaiseNotYetImplemented(20170902170153,RHS);
+
+  if RHS=nil then ;
+  if RValue=nil then ;
+end;
+
 function TPas2JSResolver.GetElementData(El: TPasElementBase;
   DataClass: TPas2JsElementDataClass): TPas2JsElementData;
 begin
@@ -3807,6 +3836,12 @@ begin
           end;
         end;
       end;
+    eopMemAddress:
+      begin
+      // @@ProcVar -> ProcVar
+      Result:=ConvertElement(El.Operand,AContext);
+      exit;
+      end;
   end;
   if U=nil then
     NotSupported;
@@ -4009,6 +4044,7 @@ Const
    Nil, // Symmetrical diff
    Nil, // Address,
    Nil, // Deref
+   Nil, // MemAddress
    Nil  // SubIndent,
   );
 
