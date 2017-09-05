@@ -57,10 +57,10 @@ type
     CurDeclSection: string;
     DeclSectionStack: TList;
     FInImplementation : Boolean;
-    procedure PrepareDeclSectionInStruct(const ADeclSection: string);
     procedure SetForwardClasses(AValue: TStrings);
     procedure SetIndentSize(AValue: Integer);
   protected
+    procedure PrepareDeclSectionInStruct(const ADeclSection: string);
     procedure MaybeSetLineElement(AElement: TPasElement);
     function GetExpr(E: TPasExpr): String; virtual;
     Function HasOption(aOption : TPasWriterOption) : Boolean; inline;
@@ -83,6 +83,7 @@ type
     constructor Create(AStream: TStream); virtual;
     destructor Destroy; override;
     procedure AddForwardClasses(aSection: TPasSection); virtual;
+    procedure WriteEnumType(AType: TPasEnumType); virtual;
     procedure WriteElement(AElement: TPasElement);virtual;
     procedure WriteType(AType: TPasType; Full : Boolean = True);virtual;
     procedure WriteProgram(aModule : TPasProgram); virtual;
@@ -103,6 +104,7 @@ type
     procedure WriteProcType(AProc: TPasProcedureType);  virtual;
     procedure WriteProcDecl(AProc: TPasProcedure; ForceBody: Boolean = False; NamePrefix : String = ''); virtual;
     procedure WriteProcImpl(AProc: TProcedureBody; IsAsm : Boolean = false); virtual;
+    procedure WriteProcImpl(AProc: TPasProcedureImpl); virtual;
     procedure WriteProperty(AProp: TPasProperty); virtual;
     procedure WriteImplBlock(ABlock: TPasImplBlock);  virtual;
     procedure WriteImplElement(AElement: TPasImplElement; AAutoInsertBeginEnd: Boolean); virtual;
@@ -237,6 +239,8 @@ begin
     WriteType(TPasType(AElement))
   else if AElement.InheritsFrom(TPasOverloadedProc) then
     WriteOverloadedProc(TPasOverloadedProc(AElement))
+  else if AElement.InheritsFrom(TPasProcedureImpl) then // This one must come before TProcedureBody/TPasProcedure
+    WriteProcImpl(TPasProcedureImpl(AElement))
   else if AElement.InheritsFrom(TPasProcedure) then
     WriteProcDecl(TPasProcedure(AElement))
   else if AElement.InheritsFrom(TProcedureBody) then
@@ -245,6 +249,12 @@ begin
     WriteImplElement(TPasImplElement(AElement),false)
   else
     raise EPasWriter.CreateFmt('Writing not implemented for %s nodes',[AElement.ElementTypeName]);
+end;
+
+procedure TPasWriter.WriteEnumType(AType: TPasEnumType);
+
+begin
+  Add(Atype.GetDeclaration(true));
 end;
 
 procedure TPasWriter.WriteType(AType: TPasType; Full : Boolean = True);
@@ -258,7 +268,7 @@ begin
   else if AType.ClassType.InheritsFrom(TPasClassType) then
     WriteClass(TPasClassType(AType))
   else if AType.ClassType = TPasEnumType then
-    AddLn(TPasEnumType(AType).GetDeclaration(true) + ';')
+    WriteEnumType(TPasEnumType(AType))
   else if AType is TPasProcedureType then
     WriteProcType(TPasProcedureType(AType))
   else if AType is TPasArrayType then
@@ -555,8 +565,11 @@ begin
       for i := 0 to ASection.UsesList.Count - 1 do
         if AllowUnit(TPasElement(ASection.UsesList[i]).Name) then
           AddUnit(TPasElement(ASection.UsesList[i]).Name,Nil);
-    AddLn(';');
-    AddLn;
+    if C>0 then
+      begin
+      AddLn(';');
+      AddLn;
+      end;
     end;
 end;
 
@@ -607,6 +620,8 @@ begin
     okRecordHelper: Add('record helper');
     okClassHelper: Add('class helper');
   end;
+  if AClass.IsForward then
+    exit;
   if (AClass.ObjKind=okClass) and (ACLass.ExternalName<>'') and NotOption(woNoExternalClass) then
     Add(' external name ''%s'' ',[AClass.ExternalName]);
   if Assigned(AClass.AncestorType) then
@@ -813,7 +828,7 @@ begin
   if AProc.IsOverload then
     Add(' overload;');
   if AProc.CallingConvention<>ccDefault then
-    Add(' '+cCallingConventions[AProc.CallingConvention]);
+    Add(' '+cCallingConventions[AProc.CallingConvention]+';');
   If Assigned(AProc.LibraryExpr) or Assigned(AProc.LibrarySymbolName) then
     begin
     if AProc.Parent is TPasClassType then
@@ -869,6 +884,56 @@ begin
         Add(' = ' + A.Value);
       end;
   Add(')');
+end;
+
+// For backwards compatibility
+
+procedure TPasWriter.WriteProcImpl(AProc: TPasProcedureImpl);
+
+var
+  i: Integer;
+  E,PE  :TPasElement;
+
+begin
+  PrepareDeclSection('');
+  if AProc.IsClassMethod then
+    Add('class ');
+  Add(AProc.TypeName + ' ');
+  if AProc.Parent.ClassType = TPasClassType then
+    Add(AProc.Parent.Name + '.');
+  Add(AProc.Name);
+  if Assigned(AProc.ProcType) and (AProc.ProcType.Args.Count > 0) then
+    AddProcArgs(AProc.ProcType.Args);
+  if Assigned(AProc.ProcType) and
+    (AProc.ProcType.ClassType = TPasFunctionType) then
+  begin
+    Add(': ');
+    WriteType(TPasFunctionType(AProc.ProcType).ResultEl.ResultType,False);
+  end;
+  AddLn(';');
+  IncDeclSectionLevel;
+  for i := 0 to AProc.Locals.Count - 1 do
+    begin
+    E:=TPasElement(AProc.Locals[i]);
+    if E.InheritsFrom(TPasProcedureImpl) then
+      begin
+      IncIndent;
+      if (i = 0) or not PE.InheritsFrom(TPasProcedureImpl) then
+        Addln;
+      end;
+    WriteElement(E);
+    if E.InheritsFrom(TPasProcedureImpl) then
+      DecIndent;
+    PE:=E;
+    end;
+  DecDeclSectionLevel;
+  AddLn('begin');
+  IncIndent;
+  if Assigned(AProc.Body) then
+    WriteImplBlock(AProc.Body);
+  DecIndent;
+  AddLn('end;');
+  AddLn;
 end;
 
 procedure TPasWriter.WriteProcImpl(AProc: TProcedureBody; IsAsm : Boolean = false);
