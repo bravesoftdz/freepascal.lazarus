@@ -21,7 +21,7 @@
  Author: Balázs Székely
 }
 
-unit opkman_createjsonforupdates;
+unit opkman_createjsonforupdatesfrm;
 
 {$mode objfpc}{$H+}
 

@@ -13,6 +13,7 @@ object CreateJSONForUpdatesFrm: TCreateJSONForUpdatesFrm
   OnDestroy = FormDestroy
   PopupMode = pmExplicit
   Position = poOwnerFormCenter
+  LCLVersion = '1.9.0.0'
   object pnButtons: TPanel
     Left = 0
     Height = 41

@@ -1,18 +1,21 @@
-object CreateRepositoryPackagefr: TCreateRepositoryPackagefr
-  Left = 0
-  Height = 506
-  Top = 0
+object CreateRepositoryPackagesFrm: TCreateRepositoryPackagesFrm
+  Left = 550
+  Height = 500
+  Top = 254
   Width = 750
-  ClientHeight = 506
+  BorderIcons = [biSystemMenu]
+  Caption = 'CreateRepositoryPackagesFrm'
+  ClientHeight = 500
   ClientWidth = 750
-  Color = clDefault
-  ParentColor = False
-  TabOrder = 0
-  DesignLeft = 468
-  DesignTop = 212
+  Constraints.MinHeight = 450
+  Constraints.MinWidth = 650
+  OnCreate = FormCreate
+  OnDestroy = FormDestroy
+  PopupMode = pmExplicit
+  Position = poOwnerFormCenter
   object pnMessage: TPanel
     Left = 247
-    Height = 408
+    Height = 402
     Top = 57
     Width = 503
     Align = alClient
@@ -26,12 +29,12 @@ object CreateRepositoryPackagefr: TCreateRepositoryPackagefr
     Font.Quality = fqDraft
     Font.Style = [fsBold]
     ParentFont = False
-    TabOrder = 4
+    TabOrder = 0
     Visible = False
   end
   object pnPackages: TPanel
     Left = 0
-    Height = 408
+    Height = 402
     Top = 57
     Width = 245
     Align = alLeft
@@ -47,8 +50,7 @@ object CreateRepositoryPackagefr: TCreateRepositoryPackagefr
     BevelOuter = bvNone
     ClientHeight = 57
     ClientWidth = 750
-    TabOrder = 0
-    OnResize = pnBrowseResize
+    TabOrder = 2
     object lbPackagedir: TLabel
       AnchorSideLeft.Control = pnBrowse
       AnchorSideTop.Control = pnBrowse
@@ -93,23 +95,23 @@ object CreateRepositoryPackagefr: TCreateRepositoryPackagefr
   end
   object pnData: TPanel
     Left = 247
-    Height = 408
+    Height = 402
     Top = 57
     Width = 503
     Align = alClient
     BevelOuter = bvNone
-    ClientHeight = 408
+    ClientHeight = 402
     ClientWidth = 503
-    TabOrder = 2
+    TabOrder = 3
     object pnPackageData: TPanel
       Left = 0
-      Height = 219
+      Height = 213
       Top = 189
       Width = 503
       Align = alClient
       BevelOuter = bvNone
       BorderStyle = bsSingle
-      ClientHeight = 215
+      ClientHeight = 209
       ClientWidth = 499
       TabOrder = 1
       Visible = False
@@ -336,7 +338,7 @@ object CreateRepositoryPackagefr: TCreateRepositoryPackagefr
   end
   object spMain: TSplitter
     Left = 245
-    Height = 408
+    Height = 402
     Top = 57
     Width = 2
     AutoSnap = False
@@ -347,7 +349,7 @@ object CreateRepositoryPackagefr: TCreateRepositoryPackagefr
   object pnButtons: TPanel
     Left = 0
     Height = 41
-    Top = 465
+    Top = 459
     Width = 750
     Align = alBottom
     BevelOuter = bvNone
