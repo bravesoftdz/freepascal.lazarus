@@ -1,4 +1,4 @@
-{  $Id: controls.pp 55776 2017-09-03 09:54:16Z ondrej $  }
+{  $Id: controls.pp 55825 2017-09-09 09:14:31Z sekelsenmat $  }
 {
  /***************************************************************************
                                Controls.pp
@@ -2132,7 +2132,7 @@ type
     function  GetClientRect: TRect; override;
     function  GetControlOrigin: TPoint; override;
     function  GetDeviceContext(var WindowHandle: HWND): HDC; override;
-    function GetParentBackground: Boolean; inline;
+    function GetParentBackground: Boolean;
     function  IsControlMouseMsg(var TheMessage): Boolean;
     procedure CreateHandle; virtual;
     procedure CreateParams(var Params: TCreateParams); virtual;

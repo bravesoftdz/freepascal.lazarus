@@ -8,7 +8,7 @@ interface
 
 uses
   Types,
-  CocoaAll,
+  CGGeometry, CocoaAll,
   Classes, Controls, SysUtils,
   //
   WSControls, LCLType, LMessages, LCLProc, Graphics, Forms,
@@ -99,7 +99,7 @@ type
     class procedure SetColor(const AWinControl: TWinControl); override;
     class procedure ShowHide(const AWinControl: TWinControl); override;
     class procedure Invalidate(const AWinControl: TWinControl); override;
-    // class procedure ScrollBy(const AWinControl: TWinControl; DeltaX, DeltaY: integer); override;
+    class procedure ScrollBy(const AWinControl: TWinControl; DeltaX, DeltaY: integer); override;
   end;
 
 
@@ -815,7 +815,7 @@ begin
   end
   else
   begin
-    if assigned(Target.Parent) and not PtInRect(rect, mp) then
+    if assigned(Target.Parent) and not Types.PtInRect(rect, mp) then
        targetControl:=Target.Parent // outside myself then route to parent
     else
     for i:=Target.ControlCount-1 downto 0  do // otherwise check, if over child and route to child
@@ -823,7 +823,7 @@ begin
       begin
         childControl:=TWinControl(Target.Controls[i]);
         rect:=childControl.BoundsRect;
-        if  PtInRect(rect, mp) then
+        if  Types.PtInRect(rect, mp) then
         begin
           targetControl:=childControl;
           break;
@@ -1369,6 +1369,24 @@ class procedure TCocoaWSWinControl.Invalidate(const AWinControl: TWinControl);
 begin
   if AWinControl.HandleAllocated then
      NSObject(AWinControl.Handle).lclInvalidate;
+end;
+
+class procedure TCocoaWSWinControl.ScrollBy(const AWinControl: TWinControl; DeltaX, DeltaY: integer);
+var
+  obj: NSObject;
+  p: NSPoint;
+  dv, cv: NSRect;
+begin
+  obj := NSObject(AWinControl.Handle);
+  if obj.isKindOfClass_(NSScrollView) and
+    assigned(NSScrollView(obj).documentView) then
+  begin
+    dv := NSRect(NSScrollView(obj).documentView.bounds);
+    cv := NSRect(NSScrollView(obj).contentView.bounds);
+    p.x := cv.origin.x + DeltaX;
+    p.y := cv.origin.y + (dv.size.height + DeltaY) - cv.size.height;
+    NSScrollview(obj).documentView.scrollPoint(p);
+  end;
 end;
 
 { TCocoaWSCustomControl }
