@@ -524,6 +524,7 @@ type
     // arrays
     Procedure TestDynArrayOfLongint;
     Procedure TestStaticArray;
+    Procedure TestStaticArrayOfChar;
     Procedure TestArrayOfArray;
     Procedure TestArrayOfArray_NameAnonymous;
     Procedure TestFunctionReturningArray;
@@ -2461,6 +2462,7 @@ begin
   Add('  c:=s[6];');
   Add('  s[7]:=c;');
   Add('  s[8]:=''a'';');
+  Add('  s[9+1]:=''b'';');
   ParseProgram;
 end;
 
@@ -8414,17 +8416,37 @@ begin
   Add('  TArrA = array[1..2] of longint;');
   Add('  TArrB = array[char] of boolean;');
   Add('  TArrC = array[byte,''a''..''z''] of longint;');
+  Add('const');
+  Add('  ArrA: TArrA = (3,4);');
   Add('var');
   Add('  a: TArrA;');
   Add('  b: TArrB;');
   Add('  c: TArrC;');
   Add('begin');
   Add('  a[1]:=1;');
-  Add('  if a[2]=length(a) then ;');
+  Add('  if a[2]=low(a) then ;');
   Add('  b[''x'']:=true;');
   Add('  if b[''y''] then ;');
   Add('  c[3,''f'']:=1;');
   Add('  if c[4,''g'']=a[1] then ;');
+  ParseProgram;
+end;
+
+procedure TTestResolver.TestStaticArrayOfChar;
+begin
+  ResolverEngine.ExprEvaluator.DefaultStringCodePage:=CP_UTF8;
+  StartProgram(false);
+  Add('type');
+  Add('  TArrA = array[1..3] of char;');
+  Add('const');
+  Add('  A: TArrA = (''p'',''a'',''b'');');
+  Add('  B: TArrA = ''pas'';');
+  Add('  Three = length(TArrA);');
+  Add('  C: array[1..Three] of char = ''pas'';');
+  Add('  D = ''pp'';');
+  Add('  E: array[length(D)..Three] of char = D;');
+  Add('  F: array[1..2] of widechar = ''äö'';');
+  Add('begin');
   ParseProgram;
 end;
 
@@ -8615,7 +8637,6 @@ begin
   Add('begin');
   Add('  e:=low(a);');
   Add('  e:=high(a);');
-  Add('  i:=length(a);');
   Add('  i:=a[red];');
   Add('  a[e]:=a[e];');
   ParseProgram;
@@ -10053,7 +10074,7 @@ begin
   CheckResolverHint(mtWarning,nSymbolXBelongsToALibrary,'Symbol "TLibrary" belongs to a library');
   CheckResolverHint(mtWarning,nSymbolXIsNotPortable,'Symbol "TPlatform" is not portable');
   CheckResolverHint(mtWarning,nSymbolXIsExperimental,'Symbol "TExperimental" is experimental');
-  CheckResolverHint(mtWarning,nSymbolXIsNotImplemented,'Symbol "TUnimplemented" is implemented');
+  CheckResolverHint(mtWarning,nSymbolXIsNotImplemented,'Symbol "TUnimplemented" is not implemented');
   CheckResolverUnexpectedHints;
 end;
 

@@ -55,6 +55,15 @@ Type
     Procedure HandleRequest(ARequest: TRequest; AResponse: TResponse); override;
   end;
 
+  { TReportListModule }
+
+  TReportListModule = class(TCustomHTTPModule)
+  Public
+    Procedure HandleRequest(ARequest: TRequest; AResponse: TResponse); override;
+  end;
+
+  procedure ShowPage(ARequest : TRequest; AResponse : TResponse);
+
 implementation
 
 
@@ -73,6 +82,7 @@ uses
   fppdf,
   fpreportpdfexport,
   {$ENDIF}
+  fpjson,
   fpmimetypes;
 
 Type
@@ -108,6 +118,45 @@ Type
 
 Var Counter : Integer;
 
+{ TReportListModule }
+
+procedure TReportListModule.HandleRequest(ARequest: TRequest; AResponse: TResponse);
+
+Var
+  O,RO : TJSONObject;
+  A : TJSONArray;
+  L : TStrings;
+  I : integer;
+  R : TReportDef;
+  S,D : String;
+
+begin
+  L:=Nil;
+  A:=Nil;
+  O:=TJSONObject.Create();
+  try
+    A:=TJSONArray.Create;
+    O.Add('data',A);
+    L:=TStringList.Create;
+    TReportDemoApplication.GetRegisteredReports(L);
+    For I:=0 to L.Count-1 do
+      begin
+      R:=TReportDef(L.Objects[i]);
+      D:=R.ReportClass.Description;
+      S:=L[i];
+      if D='' then D:=S;
+        A.Add(TJSONObject.Create(['name',S,'description',D]));
+      end;
+    AResponse.ContentType:='application/json';
+    AResponse.Content:=O.AsJSON;
+    AResponse.ContentLength:=Length(AResponse.Content);
+    AResponse.SendContent;
+  finally
+    L.Free;
+    O.Free;
+  end;
+end;
+
 { TViewReportModule }
 
 procedure TViewReportModule.HandleRequest(ARequest: TRequest;
@@ -125,7 +174,7 @@ begin
     Delete(FN,1,1);
   Delete(FN,1,Pos('/',FN)); // Strip /View
   TFN:=GetTempDir+FN;
-  With TStringList.Create do
+{  With TStringList.Create do
     try
       if FileExists(LFN) then
         LoadFromFile(LFN);
@@ -133,7 +182,7 @@ begin
       SaveToFile(LFN);
     finally
       Free;
-    end;
+    end;}
   If FileExists(TFN) then
     begin
     AResponse.ContentStream:=TFileStream.Create(GetTempDir+FN,fmOpenRead or fmShareDenyWrite);
@@ -420,12 +469,18 @@ Var
   Fmt : TRenderFormat;
   FRunner : TReportRunner;
   RC  : TFPReportExporterClass;
+  Flds : TStrings;
 
 begin
-  D:=ARequest.ContentFields.Values['demo'];
+  if SameText(ARequest.Method,'GET') then
+    flds:=ARequest.QueryFields
+  else
+    flds:=ARequest.ContentFields;
+//  flds.SaveToFile('/tmp/vars.txt');
+  D:=Flds.Values['demo'];
   if (D='') or (TReportDemoApplication.GetReportClass(D)=Nil) then
     Raise Exception.CreateFmt('Invalid or empty demo name : "%s"',[D]);
-  F:=ARequest.ContentFields.Values['format'];
+  F:=flds.Values['format'];
   Fmt:=High(TRenderFormat);
   While (fmt>rfDefault) and (CompareText(TReportDemoApplication.FormatName(fmt),F)<>0) do
     fmt:=Pred(fmt);
@@ -442,7 +497,7 @@ begin
   FN:=D+IntToStr(Counter);
   FN:=FN+PathDelim+FN+RC.DefaultExtension;
   FRunner.BaseOutputFileName:=GetTempDir+FN;
-  Conf:= TReportConfigurator.Create(ARequest.ContentFields);
+  Conf:= TReportConfigurator.Create(flds);
   Try
     FRunner.OnInitExporter:=@Conf.ConfigReport;
     FRunner.Execute;
@@ -698,10 +753,6 @@ begin
     end;
 end;
 
-initialization
-  TPageReportModule.RegisterModule('Page',True);
-  TGenerateReportModule.RegisterModule('Generate',True);
-  TViewReportModule.RegisterModule('View',True);
-  HTTPRouter.RegisterRoute('/*',@ShowPage,true);
+
 end.
 

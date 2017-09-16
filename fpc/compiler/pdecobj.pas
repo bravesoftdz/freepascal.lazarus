@@ -780,7 +780,7 @@ implementation
                       { primitive types are allowed for record helpers in mode
                         delphi }
                       (hdef.typ<>recorddef) and
-                      not (m_type_helpers in current_settings.modeswitches)
+                      not (m_delphi in current_settings.modeswitches)
                     ) then
                   Message1(type_e_record_type_expected,hdef.typename)
                 else
@@ -1381,6 +1381,7 @@ implementation
 
             { create new class }
             current_structdef:=cobjectdef.create(objecttype,n,nil,true);
+            tobjectdef(current_structdef).helpertype:=helpertype;
 
             { include always the forward flag, it'll be removed after the parent class have been
               added. This is to prevent circular childof loops }

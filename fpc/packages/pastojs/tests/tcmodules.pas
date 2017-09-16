@@ -247,6 +247,7 @@ type
     Procedure TestProc_OverloadUnit;
     Procedure TestProc_OverloadNested;
     Procedure TestProc_Varargs;
+    Procedure TestProc_ConstOrder;
 
     // enums, sets
     Procedure TestEnum_Name;
@@ -295,6 +296,10 @@ type
     Procedure TestArray_Dynamic;
     Procedure TestArray_Dynamic_Nil;
     Procedure TestArray_DynMultiDimensional;
+    Procedure TestArray_StaticInt;
+    Procedure TestArray_StaticBool;
+    Procedure TestArray_StaticChar;
+    Procedure TestArray_StaticMultiDim; // ToDo
     Procedure TestArrayOfRecord;
     // ToDo: Procedure TestArrayOfSet;
     Procedure TestArray_AsParams;
@@ -330,6 +335,7 @@ type
     // classes
     Procedure TestClass_TObjectDefaultConstructor;
     Procedure TestClass_TObjectConstructorWithParams;
+    Procedure TestClass_TObjectConstructorWithDefaultParam;
     Procedure TestClass_Var;
     Procedure TestClass_Method;
     Procedure TestClass_Implementation;
@@ -2782,6 +2788,36 @@ begin
     '']));
 end;
 
+procedure TTestModule.TestProc_ConstOrder;
+begin
+  StartProgram(false);
+  Add([
+  'const A = 3;',
+  'const B = A+1;',
+  'procedure DoIt;',
+  'const C = A+1;',
+  'const D = B+1;',
+  'const E = D+C+B+A;',
+  'begin',
+  'end;',
+  'begin'
+  ]);
+  ConvertProgram;
+  CheckSource('TestProc_ConstOrder',
+    LinesToStr([ // statements
+    'this.A = 3;',
+    'this.B = $mod.A + 1;',
+    'var C = $mod.A + 1;',
+    'var D = $mod.B + 1;',
+    'var E = ((D + C) + $mod.B) + $mod.A;',
+    'this.DoIt = function () {',
+    '};',
+    '']),
+    LinesToStr([
+    ''
+    ]));
+end;
+
 procedure TTestModule.TestEnum_Name;
 begin
   StartProgram(false);
@@ -4049,6 +4085,7 @@ begin
   Add('  b:= c < s[1];');
   Add('  b:= c <= s[1];');
   Add('  s[1] := c;');
+  Add('  s[2+3] := c;');
   ConvertProgram;
   CheckSource('TestString_CharAt',
     LinesToStr([ // statements
@@ -4065,6 +4102,7 @@ begin
     '$mod.b = $mod.c < $mod.s.charAt(1 - 1);',
     '$mod.b = $mod.c <= $mod.s.charAt(1 - 1);',
     '$mod.s = rtl.setCharAt($mod.s, 1, $mod.c);',
+    '$mod.s = rtl.setCharAt($mod.s, 2 + 3, $mod.c);',
     '']));
 end;
 
@@ -4486,9 +4524,9 @@ begin
     '']),
     '', // this.$init
     LinesToStr([ // implementation
-    'var cLoc = 3;',
     '$impl.cImpl = 2;',
     '$impl.vImpl = 0;',
+    'var cLoc = 3;',
     '$impl.DoIt = function () {',
     '  var vLoc = 0;',
     '};',
@@ -4851,6 +4889,193 @@ begin
     '']));
 end;
 
+procedure TTestModule.TestArray_StaticInt;
+begin
+  StartProgram(false);
+  Add('type');
+  Add('  TArrayInt = array[2..4] of longint;');
+  Add('var');
+  Add('  Arr: TArrayInt;');
+  Add('  Arr2: TArrayInt = (5,6,7);');
+  Add('  i: longint;');
+  Add('  b: boolean;');
+  Add('begin');
+  Add('  arr[2]:=4;');
+  Add('  arr[3]:=arr[2]+arr[3];');
+  Add('  arr[i]:=5;');
+  Add('  arr[arr[i]]:=arr[high(arr)];');
+  Add('  i:=low(arr);');
+  Add('  i:=high(arr);');
+  Add('  b:=arr[2]=arr[3];');
+  ConvertProgram;
+  CheckSource('TestArray_StaticInt',
+    LinesToStr([ // statements
+    'this.Arr = rtl.arrayNewMultiDim([3],0);',
+    'this.Arr2 = [5, 6, 7];',
+    'this.i = 0;',
+    'this.b = false;'
+    ]),
+    LinesToStr([ // $mod.$main
+    '$mod.Arr[0] = 4;',
+    '$mod.Arr[1] = $mod.Arr[0] + $mod.Arr[1];',
+    '$mod.Arr[$mod.i-2] = 5;',
+    '$mod.Arr[$mod.Arr[$mod.i-2]-2] = $mod.Arr[2];',
+    '$mod.i = 2;',
+    '$mod.i = 4;',
+    '$mod.b = $mod.Arr[0] === $mod.Arr[1];',
+    '']));
+end;
+
+procedure TTestModule.TestArray_StaticBool;
+begin
+  StartProgram(false);
+  Add('type');
+  Add('  TBools = array[boolean] of boolean;');
+  Add('  TBool2 = array[true..true] of boolean;');
+  Add('var');
+  Add('  Arr: TBools;');
+  Add('  Arr2: TBool2;');
+  Add('  Arr3: TBools = (true,false);');
+  Add('  b: boolean;');
+  Add('begin');
+  Add('  b:=low(arr);');
+  Add('  b:=high(arr);');
+  Add('  arr[true]:=false;');
+  Add('  arr[false]:=arr[b] or arr[true];');
+  Add('  arr[b]:=true;');
+  Add('  arr[arr[b]]:=arr[high(arr)];');
+  Add('  b:=arr[false]=arr[true];');
+  Add('  b:=low(arr2);');
+  Add('  b:=high(arr2);');
+  Add('  arr2[true]:=true;');
+  Add('  arr2[true]:=arr2[true] and arr2[b];');
+  Add('  arr2[b]:=false;');
+  ConvertProgram;
+  CheckSource('TestArray_StaticBool',
+    LinesToStr([ // statements
+    'this.Arr = rtl.arrayNewMultiDim([2],false);',
+    'this.Arr2 = rtl.arrayNewMultiDim([1],false);',
+    'this.Arr3 = [true, false];',
+    'this.b = false;'
+    ]),
+    LinesToStr([ // $mod.$main
+    '$mod.b = false;',
+    '$mod.b = true;',
+    '$mod.Arr[1] = false;',
+    '$mod.Arr[0] = $mod.Arr[+$mod.b] || $mod.Arr[1];',
+    '$mod.Arr[+$mod.b] = true;',
+    '$mod.Arr[+$mod.Arr[+$mod.b]] = $mod.Arr[1];',
+    '$mod.b = $mod.Arr[0] === $mod.Arr[1];',
+    '$mod.b = true;',
+    '$mod.b = true;',
+    '$mod.Arr2[0] = true;',
+    '$mod.Arr2[0] = $mod.Arr2[0] && $mod.Arr2[1-$mod.b];',
+    '$mod.Arr2[1-$mod.b] = false;',
+    '']));
+end;
+
+procedure TTestModule.TestArray_StaticChar;
+begin
+  StartProgram(false);
+  Add('type');
+  Add('  TChars = array[char] of char;');
+  Add('  TChars2 = array[''a''..''z''] of char;');
+  Add('var');
+  Add('  Arr: TChars;');
+  Add('  Arr2: TChars2;');
+  Add('  Arr3: array[2..4] of char = (''p'',''a'',''s'');');
+  Add('  Arr4: array[11..13] of char = ''pas'';');
+  Add('  c: char;');
+  Add('  b: boolean;');
+  Add('begin');
+  Add('  c:=low(arr);');
+  Add('  c:=high(arr);');
+  Add('  arr[''B'']:=''a'';');
+  Add('  arr[''D'']:=arr[c];');
+  Add('  arr[c]:=arr[''d''];');
+  Add('  arr[arr[c]]:=arr[high(arr)];');
+  Add('  b:=arr[low(arr)]=arr[''e''];');
+  Add('  c:=low(arr2);');
+  Add('  c:=high(arr2);');
+  Add('  arr2[''b'']:=''f'';');
+  Add('  arr2[''a'']:=arr2[c];');
+  Add('  arr2[c]:=arr2[''g''];');
+  ConvertProgram;
+  CheckSource('TestArray_StaticChar',
+    LinesToStr([ // statements
+    'this.Arr = rtl.arrayNewMultiDim([65536], "");',
+    'this.Arr2 = rtl.arrayNewMultiDim([26], "");',
+    'this.Arr3 = ["p", "a", "s"];',
+    'this.Arr4 = ["p", "a", "s"];',
+    'this.c = "";',
+    'this.b = false;',
+    '']),
+    LinesToStr([ // $mod.$main
+    '$mod.c = "\x00";',
+    '$mod.c = "'#$EF#$BF#$BF'";',
+    '$mod.Arr[66] = "a";',
+    '$mod.Arr[68] = $mod.Arr[$mod.c.charCodeAt(0)];',
+    '$mod.Arr[$mod.c.charCodeAt(0)] = $mod.Arr[100];',
+    '$mod.Arr[$mod.Arr[$mod.c.charCodeAt(0)].charCodeAt(0)] = $mod.Arr[65535];',
+    '$mod.b = $mod.Arr[0] === $mod.Arr[101];',
+    '$mod.c = "a";',
+    '$mod.c = "z";',
+    '$mod.Arr2[1] = "f";',
+    '$mod.Arr2[0] = $mod.Arr2[$mod.c.charCodeAt(0) - 97];',
+    '$mod.Arr2[$mod.c.charCodeAt(0) - 97] = $mod.Arr2[6];',
+    '']));
+end;
+
+procedure TTestModule.TestArray_StaticMultiDim;
+begin
+  exit;
+  StartProgram(false);
+  Add('type');
+  Add('  TArrayInt = array[1..3] of longint;');
+  Add('  TArrayArrayInt = array[5..6] of TArrayInt;');
+  Add('var');
+  Add('  Arr: TArrayInt;');
+  Add('  Arr2: TArrayArrayInt;');
+  Add('  i: longint;');
+  Add('begin');
+  Add('  i:=low(arr);');
+  Add('  i:=low(arr2);');
+  Add('  i:=low(arr2[5]);');
+  Add('  i:=high(arr);');
+  Add('  i:=high(arr2);');
+  Add('  i:=high(arr2[6]);');
+  Add('  arr2[3]:=arr;');
+  Add('  arr2[4][5]:=i;');
+  Add('  i:=arr2[6][7];');
+  Add('  arr2[8,9]:=i;');
+  Add('  i:=arr2[10,11];');
+  Add('  SetLength(arr2,14);');
+  Add('  SetLength(arr2[15],16);');
+  ConvertProgram;
+  CheckSource('TestArray_StaticMultiDim',
+    LinesToStr([ // statements
+    'this.Arr = [];',
+    'this.Arr2 = [];',
+    'this.i = 0;'
+    ]),
+    LinesToStr([ // $mod.$main
+    '$mod.Arr2 = [];',
+    'if (rtl.length($mod.Arr2) === 0) ;',
+    'if (rtl.length($mod.Arr2) === 0) ;',
+    '$mod.i = 0;',
+    '$mod.i = 0;',
+    '$mod.i = rtl.length($mod.Arr2) - 1;',
+    '$mod.i = rtl.length($mod.Arr2[2]) - 1;',
+    '$mod.Arr2[3] = $mod.Arr;',
+    '$mod.Arr2[4][5] = $mod.i;',
+    '$mod.i = $mod.Arr2[6][7];',
+    '$mod.Arr2[8][9] = $mod.i;',
+    '$mod.i = $mod.Arr2[10][11];',
+    '$mod.Arr2 = rtl.arraySetLength($mod.Arr2, 14, []);',
+    '$mod.Arr2[15] = rtl.arraySetLength($mod.Arr2[15], 16, 0);',
+    '']));
+end;
+
 procedure TTestModule.TestArrayOfRecord;
 begin
   StartProgram(false);
@@ -5092,7 +5317,7 @@ begin
   Add('begin');
   Add('  e:=low(a);');
   Add('  e:=high(a);');
-  Add('  i:=a[red]+length(a);');
+  Add('  i:=a[red];');
   Add('  a[e]:=a[e];');
   ConvertProgram;
   CheckSource('TestArrayEnumTypeRange',
@@ -5112,7 +5337,7 @@ begin
     LinesToStr([ // $mod.$main
     '$mod.e = $mod.TEnum.red;',
     '$mod.e = $mod.TEnum.blue;',
-    '$mod.i = $mod.a[$mod.TEnum.red]+2;',
+    '$mod.i = $mod.a[$mod.TEnum.red];',
     '$mod.a[$mod.e] = $mod.a[$mod.e];',
     '']));
 end;
@@ -6062,6 +6287,49 @@ begin
     ]),
     LinesToStr([ // $mod.$main
     '$mod.Obj = $mod.TObject.$create("Create",[3]);'
+    ]));
+end;
+
+procedure TTestModule.TestClass_TObjectConstructorWithDefaultParam;
+begin
+  StartProgram(false);
+  Add('type');
+  Add('  TObject = class');
+  Add('  public');
+  Add('    constructor Create;');
+  Add('  end;');
+  Add('  TTest = class(TObject)');
+  Add('  public');
+  Add('    constructor Create(const Par: longint = 1);');
+  Add('  end;');
+  Add('constructor tobject.create;');
+  Add('begin end;');
+  Add('constructor ttest.create(const par: longint);');
+  Add('begin end;');
+  Add('var t: ttest;');
+  Add('begin');
+  Add('  t:=ttest.create;');
+  Add('  t:=ttest.create(2);');
+  ConvertProgram;
+  CheckSource('TestClass_TObjectConstructorWithDefaultParam',
+    LinesToStr([ // statements
+    'rtl.createClass($mod,"TObject",null,function(){',
+    '  this.$init = function () {',
+    '  };',
+    '  this.$final = function () {',
+    '  };',
+    '  this.Create = function(){',
+    '  };',
+    '});',
+    'rtl.createClass($mod, "TTest", $mod.TObject, function () {',
+    '  this.Create$1 = function (Par) {',
+    '  };',
+    '});',
+    'this.t = null;'
+    ]),
+    LinesToStr([ // $mod.$main
+    '$mod.t = $mod.TTest.$create("Create$1", [1]);',
+    '$mod.t = $mod.TTest.$create("Create$1", [2]);'
     ]));
 end;
 

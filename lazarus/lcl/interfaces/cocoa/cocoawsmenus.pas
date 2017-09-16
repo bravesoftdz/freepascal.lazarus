@@ -51,12 +51,20 @@ type
     procedure ItemSelected;
   end;
 
+  TCocoaMenuItem = objcclass;
+
   { TCocoaMenu }
 
   TCocoaMenu = objcclass(NSMenu)
+  private
+    appleMenu: TCocoaMenuItem;
+    attachedAppleMenu: Boolean;
   public
     procedure lclItemSelected(sender: id); message 'lclItemSelected:';
     function lclIsHandle: Boolean; override;
+    procedure createAppleMenu(); message 'createAppleMenu';
+    procedure overrideAppleMenu(AItem: TCocoaMenuItem); message 'overrideAppleMenu:';
+    procedure attachAppleMenu(); message 'attachAppleMenu';
   end;
 
   { TCocoaMenuItem }
@@ -73,6 +81,7 @@ type
     procedure lclClearCallback; override;
     function lclIsHandle: Boolean; override;
     procedure attachAppleMenuItems(); message 'attachAppleMenuItems';
+    function isValidAppleMenu(): Boolean; message 'isValidAppleMenu';
     function validateMenuItem(menuItem: NSMenuItem): Boolean; override;
     procedure menuNeedsUpdate(AMenu: NSMenu); message 'menuNeedsUpdate:';
   end;
@@ -169,6 +178,51 @@ begin
 
 end;
 
+// For when there is no menu item with title 
+procedure TCocoaMenu.createAppleMenu();
+var
+  nskey, nstitle, nssubmeykey: NSString;
+  lNSSubmenu: NSMenu;
+begin
+  // create the menu item
+  nstitle := NSStringUtf8('');
+  nskey := NSStringUtf8('');
+  appleMenu := TCocoaMenuItem.alloc.initWithTitle_action_keyEquivalent(nstitle,
+    objcselector('lclItemSelected:'), nskey);
+  nstitle.release;
+  nskey.release;
+
+  // add the submenu
+  nssubmeykey := NSStringUtf8('');
+  lNSSubmenu := NSMenu.alloc.initWithTitle(nssubmeykey);
+  appleMenu.setSubmenu(lNSSubmenu);
+  nssubmeykey.release;
+
+  appleMenu.attachAppleMenuItems();
+end;
+
+// For when there is a menu item with title 
+procedure TCocoaMenu.overrideAppleMenu(AItem: TCocoaMenuItem);
+begin
+  if appleMenu <> nil then
+  begin
+    if indexOfItem(appleMenu) >= 0 then
+      removeItem(appleMenu);
+    appleMenu.release;
+    appleMenu := nil;
+  end;
+  attachedAppleMenu := False;
+  AItem.attachAppleMenuItems();
+end;
+
+procedure TCocoaMenu.attachAppleMenu();
+begin
+  if attachedAppleMenu then Exit;
+  if appleMenu = nil then Exit;
+  attachedAppleMenu := True;
+  insertItem_atIndex(appleMenu, 0);
+end;
+
 { TCocoaMenuITem }
 
 function TCocoaMenuItem.lclIsHandle: Boolean;
@@ -263,6 +317,12 @@ begin
   attachedAppleMenuItems := True;
 end;
 
+function TCocoaMenuItem.isValidAppleMenu(): Boolean;
+begin
+  Result := hasSubmenu() and (submenu() <> nil);
+  Result := Result and ('' = NSStringToString(title));
+end;
+
 function TCocoaMenuItem.validateMenuItem(menuItem: NSMenuItem): Boolean;
 begin
   Result := FMenuItemTarget.Enabled;
@@ -310,8 +370,13 @@ end;
 { TCocoaWSMainMenu }
 
 class function TCocoaWSMainMenu.CreateHandle(const AMenu: TMenu): HMENU;
+var
+  ns: NSString;
 begin
-  Result := HMENU(TCocoaMenu.alloc.initWithTitle(NSStringUtf8('')));
+  ns := NSStringUtf8('');
+  Result := HMENU(TCocoaMenu.alloc.initWithTitle(ns));
+  ns.release;
+  TCocoaMenu(Result).createAppleMenu();
 end;
 
 { TCocoaWSMenuItem }
@@ -363,18 +428,19 @@ var
   Parent  : TCocoaMenu;
   item    : NSMenuItem;
   ns      : NSString;
-  s       : string;
+  str       : string;
 begin
   if not Assigned(AMenuItem) or (AMenuItem.Handle=0) or not Assigned(AMenuItem.Parent) or (AMenuItem.Parent.Handle=0) then Exit;
   ParObj:=NSObject(AMenuItem.Parent.Handle);
+  item:=NSMenuItem(AMenuItem.Handle);
 
   if ParObj.isKindOfClass_(NSMenuItem) then
   begin
     if not NSMenuItem(ParObj).hasSubmenu then
     begin
-      s := AMenuItem.Parent.Caption;
-      DeleteAmpersands(s);
-      ns := NSStringUtf8(pchar(s));
+      str := AMenuItem.Parent.Caption;
+      DeleteAmpersands(str);
+      ns := NSStringUtf8(pchar(str));
       Parent := TCocoaMenu.alloc.initWithTitle(ns);
       Parent.setDelegate(TCocoaMenuItem(ParObj));
       NSMenuItem(ParObj).setSubmenu(Parent);
@@ -387,7 +453,6 @@ begin
   else
     Exit;
 
-  item:=NSMenuItem(AMenuItem.Handle);
   Parent.insertItem_atIndex(item, AMenuItem.MenuVisibleIndex);
 end;
 

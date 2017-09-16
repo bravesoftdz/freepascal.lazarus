@@ -60,6 +60,9 @@ unit cgobj;
           executionweight : longint;
           alignment : talignment;
           rg        : array[tregistertype] of trgobj;
+{$if defined(cpu8bitalu) or defined(cpu16bitalu)}
+          has_next_reg: bitpacked array[TSuperRegister] of boolean;
+{$endif cpu8bitalu or cpu16bitalu}
        {$ifdef flowgraph}
           aktflownode:word;
        {$endif}
@@ -88,6 +91,17 @@ unit cgobj;
           function gettempregister(list:TAsmList):Tregister;virtual;
           {Does the generic cg need SIMD registers, like getmmxregister? Or should
            the cpu specific child cg object have such a method?}
+
+{$if defined(cpu8bitalu) or defined(cpu16bitalu)}
+          {# returns the next virtual register }
+          function GetNextReg(const r: TRegister): TRegister;virtual;
+{$endif cpu8bitalu or cpu16bitalu}
+{$ifdef cpu8bitalu}
+          {# returns the register with the offset of ofs of a continuous set of register starting with r }
+          function GetOffsetReg(const r : TRegister;ofs : shortint) : TRegister;virtual;abstract;
+          {# returns the register with the offset of ofs of a continuous set of register starting with r and being continued with rhi }
+          function GetOffsetReg64(const r,rhi: TRegister;ofs : shortint): TRegister;virtual;abstract;
+{$endif cpu8bitalu}
 
           procedure add_reg_instruction(instr:Tai;r:tregister);virtual;
           procedure add_move_instruction(instr:Taicpu);virtual;
@@ -573,6 +587,9 @@ implementation
 
     procedure tcg.init_register_allocators;
       begin
+{$if defined(cpu8bitalu) or defined(cpu16bitalu)}
+        fillchar(has_next_reg,sizeof(has_next_reg),0);
+{$endif cpu8bitalu or cpu16bitalu}
         fillchar(rg,sizeof(rg),0);
         add_reg_instruction_hook:=@add_reg_instruction;
         executionweight:=1;
@@ -584,6 +601,9 @@ implementation
         { Safety }
         fillchar(rg,sizeof(rg),0);
         add_reg_instruction_hook:=nil;
+{$if defined(cpu8bitalu) or defined(cpu16bitalu)}
+        fillchar(has_next_reg,sizeof(has_next_reg),0);
+{$endif cpu8bitalu or cpu16bitalu}
       end;
 
     {$ifdef flowgraph}
@@ -600,10 +620,76 @@ implementation
     {$endif}
 
     function tcg.getintregister(list:TAsmList;size:Tcgsize):Tregister;
+{$ifdef cpu8bitalu}
+      var
+        tmp1,tmp2,tmp3 : TRegister;
+{$endif cpu8bitalu}
       begin
         if not assigned(rg[R_INTREGISTER]) then
           internalerror(200312122);
+{$if defined(cpu8bitalu)}
+        case size of
+          OS_8,OS_S8:
+            Result:=rg[R_INTREGISTER].getregister(list,cgsize2subreg(R_INTREGISTER,size));
+          OS_16,OS_S16:
+            begin
+              Result:=getintregister(list, OS_8);
+              has_next_reg[getsupreg(Result)]:=true;
+              { ensure that the high register can be retrieved by
+                GetNextReg
+              }
+              if getintregister(list, OS_8)<>GetNextReg(Result) then
+                internalerror(2011021331);
+            end;
+          OS_32,OS_S32:
+            begin
+              Result:=getintregister(list, OS_8);
+              has_next_reg[getsupreg(Result)]:=true;
+              tmp1:=getintregister(list, OS_8);
+              has_next_reg[getsupreg(tmp1)]:=true;
+              { ensure that the high register can be retrieved by
+                GetNextReg
+              }
+              if tmp1<>GetNextReg(Result) then
+                internalerror(2011021332);
+              tmp2:=getintregister(list, OS_8);
+              has_next_reg[getsupreg(tmp2)]:=true;
+              { ensure that the upper register can be retrieved by
+                GetNextReg
+              }
+              if tmp2<>GetNextReg(tmp1) then
+                internalerror(2011021333);
+              tmp3:=getintregister(list, OS_8);
+              { ensure that the upper register can be retrieved by
+                GetNextReg
+              }
+              if tmp3<>GetNextReg(tmp2) then
+                internalerror(2011021334);
+            end;
+          else
+            internalerror(2011021330);
+        end;
+{$elseif defined(cpu16bitalu)}
+        case size of
+          OS_8, OS_S8,
+          OS_16, OS_S16:
+            Result:=rg[R_INTREGISTER].getregister(list,cgsize2subreg(R_INTREGISTER,size));
+          OS_32, OS_S32:
+            begin
+              Result:=getintregister(list, OS_16);
+              has_next_reg[getsupreg(Result)]:=true;
+              { ensure that the high register can be retrieved by
+                GetNextReg
+              }
+              if getintregister(list, OS_16)<>GetNextReg(Result) then
+                internalerror(2013030202);
+            end;
+          else
+            internalerror(2013030201);
+        end;
+{$elseif defined(cpu32bitalu) or defined(cpu64bitalu)}
         result:=rg[R_INTREGISTER].getregister(list,cgsize2subreg(R_INTREGISTER,size));
+{$endif}
       end;
 
 
@@ -640,6 +726,22 @@ implementation
       begin
         result:=rg[R_TEMPREGISTER].getregister(list,R_SUBWHOLE);
       end;
+
+
+{$if defined(cpu8bitalu) or defined(cpu16bitalu)}
+    function tcg.GetNextReg(const r: TRegister): TRegister;
+      begin
+        if getsupreg(r)<first_int_imreg then
+          internalerror(2013051401);
+        if getregtype(r)<>R_INTREGISTER then
+          internalerror(2017091101);
+        if getsubreg(r)<>R_SUBWHOLE then
+          internalerror(2017091102);
+        if not has_next_reg[getsupreg(r)] then
+          internalerror(2017091103);
+        result:=TRegister(longint(r)+1);
+      end;
+{$endif cpu8bitalu or cpu16bitalu}
 
 
     function Tcg.makeregsize(list:TAsmList;reg:Tregister;size:Tcgsize):Tregister;

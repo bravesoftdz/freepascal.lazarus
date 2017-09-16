@@ -44,8 +44,11 @@ unit cgcpu;
         procedure init_register_allocators;override;
         procedure done_register_allocators;override;
 
-        function getintregister(list:TAsmList;size:Tcgsize):Tregister;override;
         function getaddressregister(list:TAsmList):TRegister;override;
+
+        function GetHigh(const r : TRegister) : TRegister;inline;
+        function GetOffsetReg(const r: TRegister;ofs : shortint): TRegister;override;
+        function GetOffsetReg64(const r,rhi: TRegister;ofs : shortint): TRegister;override;
 
         procedure a_load_const_cgpara(list : TAsmList;size : tcgsize;a : tcgint;const paraloc : TCGPara);override;
         procedure a_load_ref_cgpara(list : TAsmList;size : tcgsize;const r : treference;const paraloc : TCGPara);override;
@@ -152,53 +155,30 @@ unit cgcpu;
       end;
 
 
-    function tcgavr.getintregister(list: TAsmList; size: Tcgsize): Tregister;
-      var
-        tmp1,tmp2,tmp3 : TRegister;
-      begin
-        case size of
-          OS_8,OS_S8:
-            Result:=inherited getintregister(list, size);
-          OS_16,OS_S16:
-            begin
-              Result:=inherited getintregister(list, OS_8);
-              { ensure that the high register can be retrieved by
-                GetNextReg
-              }
-              if inherited getintregister(list, OS_8)<>GetNextReg(Result) then
-                internalerror(2011021331);
-            end;
-          OS_32,OS_S32:
-            begin
-              Result:=inherited getintregister(list, OS_8);
-              tmp1:=inherited getintregister(list, OS_8);
-              { ensure that the high register can be retrieved by
-                GetNextReg
-              }
-              if tmp1<>GetNextReg(Result) then
-                internalerror(2011021332);
-              tmp2:=inherited getintregister(list, OS_8);
-              { ensure that the upper register can be retrieved by
-                GetNextReg
-              }
-              if tmp2<>GetNextReg(tmp1) then
-                internalerror(2011021333);
-              tmp3:=inherited getintregister(list, OS_8);
-              { ensure that the upper register can be retrieved by
-                GetNextReg
-              }
-              if tmp3<>GetNextReg(tmp2) then
-                internalerror(2011021334);
-            end;
-          else
-            internalerror(2011021330);
-        end;
-      end;
-
-
     function tcgavr.getaddressregister(list: TAsmList): TRegister;
       begin
        Result:=getintregister(list,OS_ADDR);
+      end;
+
+
+    function tcgavr.GetHigh(const r : TRegister) : TRegister;
+      begin
+        result:=GetNextReg(r);
+      end;
+
+
+    function tcgavr.GetOffsetReg(const r: TRegister;ofs : shortint): TRegister;
+      begin
+        result:=TRegister(longint(r)+ofs);
+      end;
+
+
+    function tcgavr.GetOffsetReg64(const r,rhi: TRegister;ofs : shortint): TRegister;
+      begin
+        if ofs>3 then
+          result:=TRegister(longint(rhi)+ofs-4)
+        else
+          result:=TRegister(longint(r)+ofs);
       end;
 
 

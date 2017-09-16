@@ -1721,7 +1721,7 @@ begin
         end;
       writeln;
 
-      len:=ppufile.getasizeint;
+      len:=ppufile.getlongint;
       if len>0 then
         begin
           space:='    '+space;
@@ -2899,8 +2899,10 @@ procedure readdefinitions(const s:string; ParentDef: TPpuContainerDef);
 
 { type tobjecttyp is in symconst unit }
 { type tvarianttype is in symconst unit }
+{ type thelpertype is in symconst unit }
 var
   b : byte;
+  otb : byte; { Object Type byte, needed later again }
   l,j,tokenbufsize : longint;
   tokenbuf : pbyte;
   calloption : tproccalloption;
@@ -3250,14 +3252,14 @@ begin
              readcommondef('Procedural type (ProcVar) definition',defoptions,def);
              read_abstract_proc_def(calloption,procoptions, TPpuProcDef(def));
              writeln([space,'   Symtable level :',ppufile.getbyte]);
+             if tsystemcpu(ppufile.header.common.cpu)=cpu_jvm then
+               readderef('');
              if not EndOfEntry then
                HasMoreInfos;
              space:='    '+space;
              { parast }
              readsymtable('parast',TPpuProcDef(def));
              delete(space,1,4);
-             if tsystemcpu(ppufile.header.common.cpu)=cpu_jvm then
-               readderef('');
            end;
 
          ibshortstringdef :
@@ -3334,8 +3336,6 @@ begin
                  writeln([space,'      PaddingSize : ',getword]);
                  readmanagementoperatoroptions(space);
                end;
-             if not EndOfEntry then
-               HasMoreInfos;
              {read the record definitions and symbols}
              if not(df_copied_def in current_defoptions) then
                begin
@@ -3344,6 +3344,8 @@ begin
                  readsymtable('fields',TPpuRecordDef(def));
                  Delete(space,1,4);
                end;
+             if not EndOfEntry then
+               HasMoreInfos;
            end;
 
          ibobjectdef :
@@ -3355,9 +3357,9 @@ begin
              writeln([space,'   Import lib/pkg : ',getstring]);
              write  ([space,'          Options : ']);
              readobjectdefoptions(objdef);
-             b:=getbyte;
+             otb:=getbyte;
              write  ([space,'             Type : ']);
-             case tobjecttyp(b) of
+             case tobjecttyp(otb) of
                odt_class          : writeln('class');
                odt_object         : writeln('object');
                odt_interfacecom   : writeln('interfacecom');
@@ -3372,7 +3374,7 @@ begin
                odt_interfacejava  : writeln('Java interface');
                else                 WriteWarning('Invalid object type: ' + IntToStr(b));
              end;
-             case tobjecttyp(b) of
+             case tobjecttyp(otb) of
                odt_class, odt_cppclass, odt_objcclass, odt_javaclass:
                  objdef.ObjType:=otClass;
                odt_object:
@@ -3381,6 +3383,15 @@ begin
                  objdef.ObjType:=otInterface;
                odt_helper:
                  objdef.ObjType:=otHelper;
+             end;
+             b:=getbyte;
+             write  ([space,'      Helper Type : ']);
+             case thelpertype(b) of
+               ht_none   : writeln('none');
+               ht_class  : writeln('class helper');
+               ht_record : writeln('record helper');
+               ht_type   : writeln('type helper');
+               else        WriteWarning('Invalid helper type: ' + IntToStr(b));
              end;
              writeln([space,'    External name : ',getstring]);
              objdef.Size:=getasizeint;
@@ -3394,7 +3405,7 @@ begin
              write  ([space,  '   Ancestor Class : ']);
              readderef('',objdef.Ancestor);
 
-             if tobjecttyp(b) in [odt_interfacecom,odt_interfacecorba,odt_dispinterface] then
+             if tobjecttyp(otb) in [odt_interfacecom,odt_interfacecorba,odt_dispinterface] then
                begin
                   { IIDGUID }
                   for j:=1to 16 do
@@ -3408,7 +3419,7 @@ begin
                objdef.Options:=objdef.Options + [ooAbstractMethods];
              writeln([space,' Abstract methods : ',l]);
 
-             if tobjecttyp(b)=odt_helper then
+             if tobjecttyp(otb)=odt_helper then
                begin
                  write([space,'    Helper parent : ']);
                  readderef('',objdef.HelperParent);
@@ -3424,7 +3435,7 @@ begin
                  readvisibility;
                end;
 
-             if tobjecttyp(b) in [odt_class,odt_objcclass,odt_objcprotocol,odt_javaclass,odt_interfacejava] then
+             if tobjecttyp(otb) in [odt_class,odt_objcclass,odt_objcprotocol,odt_javaclass,odt_interfacejava] then
               begin
                 l:=getlongint;
                 writeln([space,'  Impl Intf Count : ',l]);
@@ -3444,11 +3455,8 @@ begin
                  Include(objdef.Options, ooCopied);
                  writeln('  Copy of def: ');
                  readderef('',objdef.Ancestor);
-               end;
-
-             if not EndOfEntry then
-               HasMoreInfos;
-             if not(df_copied_def in current_defoptions) then
+               end
+             else
                begin
                  {read the record definitions and symbols}
                  space:='    '+space;
@@ -3456,6 +3464,8 @@ begin
                  readsymtable('fields',objdef);
                  Delete(space,1,4);
               end;
+             if not EndOfEntry then
+               HasMoreInfos;
            end;
 
          ibfiledef :
@@ -3731,6 +3741,8 @@ begin
            if not silent then
              ReadLinkContainer('Link framework: ');
 
+         ibjvmnamespace:
+            Writeln('JVM name space: '+getString);
          ibmainname:
            if not silent then
              Writeln(['Specified main program symbol name: ',getstring]);

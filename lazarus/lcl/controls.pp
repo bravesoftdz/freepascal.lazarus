@@ -1,4 +1,4 @@
-{  $Id: controls.pp 55825 2017-09-09 09:14:31Z sekelsenmat $  }
+{  $Id: controls.pp 55857 2017-09-13 19:29:11Z michl $  }
 {
  /***************************************************************************
                                Controls.pp
@@ -1591,8 +1591,8 @@ type
     function  GetTextLen: Integer; virtual;
     procedure SetTextBuf(Buffer: PChar); virtual;
     function  Perform(Msg: Cardinal; WParam: WParam; LParam: LParam): LRESULT;
-    function  ScreenToClient(const APoint: TPoint): TPoint;
-    function  ClientToScreen(const APoint: TPoint): TPoint;
+    function  ScreenToClient(const APoint: TPoint): TPoint; virtual;
+    function  ClientToScreen(const APoint: TPoint): TPoint; virtual;
     function  ScreenToControl(const APoint: TPoint): TPoint;
     function  ControlToScreen(const APoint: TPoint): TPoint;
     function  ClientToParent(const Point: TPoint; AParent: TWinControl = nil): TPoint;
@@ -2219,7 +2219,7 @@ type
     function ControlAtPos(const Pos: TPoint; AllowDisabled: Boolean): TControl;
     function ControlAtPos(const Pos: TPoint;
                           AllowDisabled, AllowWinControls: Boolean): TControl;
-    function ControlAtPos(const Pos: TPoint; Flags: TControlAtPosFlags): TControl;
+    function ControlAtPos(const Pos: TPoint; Flags: TControlAtPosFlags): TControl; virtual;
     function  ContainsControl(Control: TControl): Boolean;
     procedure DoAdjustClientRectChange(const InvalidateRect: Boolean = True);
     procedure InvalidateClientRectCache(WithChildControls: boolean);

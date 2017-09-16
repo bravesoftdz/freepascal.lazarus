@@ -555,7 +555,7 @@ var
   p: PChar;
   HasSourceType: Boolean;
   ok: Boolean;
-  OldLastNode: TCodeTreeNode;
+  OldLastNode, SubNode: TCodeTreeNode;
   OldLastPos: Integer;
   aNameSpace, aName: String;
 begin
@@ -690,6 +690,10 @@ begin
             if (CurPos.Flag<>cafWord)
             or (CurSection in [ctnUnit,ctnPackage]) then
               AtomIsIdentifierSaveE;
+            CreateChildNode;
+            CurNode.Desc:=ctnIdentifier;
+            CurNode.EndPos:=CurPos.EndPos;
+            EndChildNode;
             aName:=GetAtom;
             ReadNextAtom; // read ';' (or 'platform;' or 'unimplemented;')
             if CurPos.Flag=cafPoint then begin
@@ -787,9 +791,12 @@ begin
             Node.EndPos:=-1;
             MoveCursorToCleanPos(Node.StartPos);
           end else begin
-            if Node.FirstChild.Desc=ctnUsesSection then begin
+            SubNode:=Node.FirstChild;
+            while (SubNode<>nil) and (SubNode.Desc=ctnIdentifier) do
+              SubNode:=SubNode.NextBrother;
+            if (SubNode<>nil) and (SubNode.Desc=ctnUsesSection) then begin
               // uses section is already parsed
-              if Node.FirstChild.FirstChild=nil then
+              if SubNode.FirstChild=nil then
                 RaiseException(20170421194939,
                   'TPascalParserTool.BuildTree inconsistency: uses section was not scanned completely and was not deleted');
               if ScannedRange<lsrMainUsesSectionEnd then
@@ -2093,8 +2100,10 @@ begin
     EndChildNode;
     if CurPos.Flag=cafSemicolon then break;
     if CurPos.Flag<>cafComma then
-      if ExceptionOnError then
-        SaveRaiseCharExpectedButAtomFound(20170421195538,';')
+      if ExceptionOnError then begin
+        CTDumpStack;
+        SaveRaiseCharExpectedButAtomFound(20170421195538,';');
+      end
       else exit;
   until (CurPos.StartPos>SrcLen);
   CurNode.EndPos:=CurPos.EndPos;
@@ -6054,6 +6063,8 @@ begin
       if Result=nil then exit;
     end;
     Result:=Result.FirstChild;
+    while (Result<>nil) and (Result.Desc=ctnIdentifier) do
+      Result:=Result.NextBrother;
     if (Result=nil) then exit;
     if (Result.Desc<>ctnUsesSection) then Result:=nil;
   end;
@@ -6180,6 +6191,8 @@ begin
           exit;
         end;
         Result:=Result.FirstChild;
+        while (Result.NextBrother<>nil) and (Result.Desc=ctnIdentifier) do
+          Result:=Result.NextBrother;
         if Result.Desc<>ctnUsesSection then exit;
         // lsrMainUsesSectionStart in program
         if Range=lsrMainUsesSectionStart then exit;
@@ -6195,6 +6208,8 @@ begin
           exit;
         end;
         Result:=Result.FirstChild;
+        while (Result.NextBrother<>nil) and (Result.Desc=ctnIdentifier) do
+          Result:=Result.NextBrother;
         if Result.Desc=ctnUsesSection then
           Result:=Result.NextSkipChilds;
         exit;
@@ -6222,9 +6237,11 @@ var
 begin
   Result:=FindSectionNodeAtPos(P);
   if Result=nil then exit;
-  if (Result.FirstChild<>nil) and (Result.FirstChild.Desc=ctnUsesSection) then
+  UsesNode:=Result.FirstChild;
+  while (UsesNode<>nil) and (UsesNode.Desc=ctnIdentifier) do
+    UsesNode:=UsesNode.NextBrother;
+  if (UsesNode<>nil) and (UsesNode.Desc=ctnUsesSection) then
   begin
-    UsesNode:=Result.FirstChild;
     if (UsesNode.StartPos<=P) and (UsesNode.EndPos>P) then
       Result:=UsesNode;
   end;
