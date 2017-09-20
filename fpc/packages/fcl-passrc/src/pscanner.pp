@@ -493,6 +493,8 @@ type
     FileName: String;
     Row, Column: Cardinal;
   end;
+const
+  DefPasSourcePos: TPasSourcePos = (Filename:''; Row:0; Column:0);
 
 type
   { TPascalScanner }
@@ -509,6 +511,7 @@ type
     FAllowedModeSwitches: TModeSwitches;
     FConditionEval: TCondDirectiveEvaluator;
     FCurrentModeSwitches: TModeSwitches;
+    FCurTokenPos: TPasSourcePos;
     FLastMsg: string;
     FLastMsgArgs: TMessageArgs;
     FLastMsgNumber: integer;
@@ -623,6 +626,7 @@ type
 
     property CurToken: TToken read FCurToken;
     property CurTokenString: string read FCurTokenString;
+    property CurTokenPos: TPasSourcePos read FCurTokenPos;
     Property PreviousToken : TToken Read FPreviousToken;
     Property NonTokens : TTokens Read FNonTokens;
     Property TokenOptions : TTokenOptions Read FTokenOptions Write FTokenOptions;
@@ -2938,7 +2942,7 @@ var
 
 
 begin
-  result:=tkLineEnding;
+  Result:=tkLineEnding;
   if TokenStr = nil then
     if not FetchLine then
     begin
@@ -2947,6 +2951,9 @@ begin
       exit;
     end;
   FCurTokenString := '';
+  FCurTokenPos.FileName:=CurFilename;
+  FCurTokenPos.Row:=CurRow;
+  FCurTokenPos.Column:=CurColumn;
   case TokenStr[0] of
     #0:         // Empty line
       begin
@@ -3726,6 +3733,5 @@ begin
   else
     Exclude(FTokenOptions,toForceCaret)
 end;
-
 
 end.
