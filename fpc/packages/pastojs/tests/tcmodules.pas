@@ -211,7 +211,7 @@ type
     Procedure TestString_CharAt;
     Procedure TestStr;
     Procedure TestBaseType_AnsiStringFail;
-    Procedure TestBaseType_UnicodeStringFail;
+    Procedure TestBaseType_WideStringFail;
     Procedure TestBaseType_ShortStringFail;
     Procedure TestBaseType_RawByteStringFail;
     Procedure TestTypeShortstring_Fail;
@@ -3579,7 +3579,7 @@ begin
     LinesToStr([
     'if ($mod.c.charCodeAt() in $mod.LowChars) ;',
     'if (97 in $mod.LowChars) ;',
-    'if ($mod.s.charCodeAt(1 - 1) in $mod.LowChars) ;',
+    'if ($mod.s.charCodeAt(0) in $mod.LowChars) ;',
     'if ($mod.c.charCodeAt() in $mod.Chars) ;',
     'if ($mod.c.charCodeAt() in rtl.createSet(null, 97, 122, 95)) ;',
     'if (98 in rtl.createSet(null, 97, 122, 95)) ;',
@@ -4092,7 +4092,7 @@ begin
   Add('  b:= c <> s[1];');
   Add('  b:= c > s[1];');
   Add('  b:= c >= s[1];');
-  Add('  b:= c < s[1];');
+  Add('  b:= c < s[2];');
   Add('  b:= c <= s[1];');
   Add('  s[1] := c;');
   Add('  s[2+3] := c;');
@@ -4104,15 +4104,15 @@ begin
     'this.b = false;'
     ]),
     LinesToStr([ // this.$main
-    '$mod.b = $mod.s.charAt(1-1) === $mod.c;',
-    '$mod.b = $mod.c === $mod.s.charAt(1 - 1);',
-    '$mod.b = $mod.c !== $mod.s.charAt(1 - 1);',
-    '$mod.b = $mod.c > $mod.s.charAt(1 - 1);',
-    '$mod.b = $mod.c >= $mod.s.charAt(1 - 1);',
-    '$mod.b = $mod.c < $mod.s.charAt(1 - 1);',
-    '$mod.b = $mod.c <= $mod.s.charAt(1 - 1);',
-    '$mod.s = rtl.setCharAt($mod.s, 1, $mod.c);',
-    '$mod.s = rtl.setCharAt($mod.s, 2 + 3, $mod.c);',
+    '$mod.b = $mod.s.charAt(0) === $mod.c;',
+    '$mod.b = $mod.c === $mod.s.charAt(0);',
+    '$mod.b = $mod.c !== $mod.s.charAt(0);',
+    '$mod.b = $mod.c > $mod.s.charAt(0);',
+    '$mod.b = $mod.c >= $mod.s.charAt(0);',
+    '$mod.b = $mod.c < $mod.s.charAt(1);',
+    '$mod.b = $mod.c <= $mod.s.charAt(0);',
+    '$mod.s = rtl.setCharAt($mod.s, 0, $mod.c);',
+    '$mod.s = rtl.setCharAt($mod.s, (2 + 3) - 1, $mod.c);',
     '']));
 end;
 
@@ -4177,11 +4177,11 @@ begin
   ConvertProgram;
 end;
 
-procedure TTestModule.TestBaseType_UnicodeStringFail;
+procedure TTestModule.TestBaseType_WideStringFail;
 begin
   StartProgram(false);
-  Add('var s: UnicodeString');
-  SetExpectedPasResolverError('identifier not found "UnicodeString"',PasResolveEval.nIdentifierNotFound);
+  Add('var s: WideString');
+  SetExpectedPasResolverError('identifier not found "WideString"',PasResolveEval.nIdentifierNotFound);
   ConvertProgram;
 end;
 
@@ -12748,7 +12748,7 @@ begin
   Add([
   'type',
   '  uni = string;',
-  '  WideChar = char;',
+  '  WChar = char;',
   'procedure DoIt(s: string); begin end;',
   'procedure DoIt(v: jsvalue); begin end;',
   'var',
@@ -12784,7 +12784,7 @@ begin
   Add([
   'type',
   '  uni = string;',
-  '  WideChar = char;',
+  '  WChar = char;',
   'procedure DoIt(c: char); begin end;',
   'procedure DoIt(v: jsvalue); begin end;',
   'var',

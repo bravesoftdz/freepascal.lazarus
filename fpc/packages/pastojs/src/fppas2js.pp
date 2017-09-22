@@ -805,7 +805,9 @@ const
 
   btAllJSBaseTypes = [
     btChar,
+    btWideChar,
     btString,
+    btUnicodeString,
     btDouble,
     btBoolean,
     btByteBool,
@@ -4981,16 +4983,44 @@ var
       exit(TResolvedReference(Value.CustomData));
   end;
 
+  function ConvertIndexMinus1(Param: TPasExpr): TJSElement;
+  var
+    NeedMinus1: Boolean;
+    JSVal: TJSValue;
+    MinusJS: TJSAdditiveExpressionMinus;
+  begin
+    Result:=ConvertElement(Param,ArgContext);
+    NeedMinus1:=true;
+    if (Result is TJSLiteral) then
+      begin
+      JSVal:=TJSLiteral(Result).Value;
+      if (JSVal.ValueType=jstNumber) then
+        begin
+        // simply subtract 1 from constant
+        JSVal.AsNumber:=JSVal.AsNumber-1;
+        NeedMinus1:=false;
+        end;
+      end;
+    if NeedMinus1 then
+      begin
+      // index-1
+      MinusJS:=TJSAdditiveExpressionMinus(CreateElement(TJSAdditiveExpressionMinus,Param));
+      MinusJS.A:=Result;
+      MinusJS.B:=CreateLiteralNumber(Param,1);
+      Result:=MinusJS;
+      end;
+  end;
+
   procedure ConvertStringBracket;
   var
     Call: TJSCallExpression;
     Param: TPasExpr;
-    Expr: TJSAdditiveExpressionMinus;
     DotExpr: TJSDotMemberExpression;
     AssignContext: TAssignContext;
     Elements: TJSArrayLiteralElements;
     AssignSt: TJSSimpleAssignStatement;
     OldAccess: TCtxAccess;
+    IndexExpr: TJSElement;
   begin
     Param:=El.Params[0];
     case AContext.Access of
@@ -5011,8 +5041,9 @@ var
         Call.Expr:=CreateMemberExpression([FBuiltInNames[pbivnRTL],FBuiltInNames[pbifnSetCharAt]]);
         // first param  s
         Elements.AddElement.Expr:=ConvertElement(El.Value,AContext);
-        // second param  index
-        Elements.AddElement.Expr:=ConvertElement(Param,ArgContext);
+        // second param  index-1
+        IndexExpr:=ConvertIndexMinus1(Param);
+        Elements.AddElement.Expr:=IndexExpr;
         AContext.Access:=OldAccess;
         // third param  value
         Elements.AddElement.Expr:=AssignContext.RightSide;
@@ -5036,10 +5067,8 @@ var
         DotExpr.Name:='charAt';
 
         // add parameter "index-1"
-        Expr:=TJSAdditiveExpressionMinus(CreateElement(TJSAdditiveExpressionMinus,Param));
-        Elements.AddElement.Expr:=Expr;
-        Expr.A:=ConvertElement(Param,ArgContext);
-        Expr.B:=CreateLiteralNumber(Param,1);
+        IndexExpr:=ConvertIndexMinus1(Param);
+        Elements.AddElement.Expr:=IndexExpr;
         Result:=Call;
       finally
         if Result=nil then
@@ -6490,7 +6519,7 @@ function TPasToJSConverter.ConvertBuiltIn_IncDec(El: TParamsExpr;
 }
 var
   AssignSt: TJSAssignStatement;
-  Expr: TPasExpr;
+  Expr, SrcEl: TPasExpr;
   ExprResolved: TPasResolverResult;
   ExprArg: TPasArgument;
   ValueJS: TJSElement;
@@ -6508,6 +6537,7 @@ begin
     ValueJS:=CreateLiteralNumber(El,1)
   else
     ValueJS:=ConvertExpression(El.Params[1],AContext);
+  SrcEl:=El.Value;
 
   // check target variable
   AssignSt:=nil;
@@ -6520,22 +6550,22 @@ begin
         begin
         // target variable is a reference
         // -> convert inc(ref,b)  to  ref.set(ref.get()+b)
-        Call:=CreateCallExpression(El);
+        Call:=CreateCallExpression(SrcEl);
         // create "ref.set"
-        Call.Expr:=CreateDotExpression(El,
+        Call.Expr:=CreateDotExpression(SrcEl,
           CreateIdentifierExpr(ExprResolved.IdentEl,AContext),
-          CreatePrimitiveDotExpr(TempRefObjSetterName,El));
+          CreatePrimitiveDotExpr(TempRefObjSetterName,SrcEl));
         // create "+"
         if IsInc then
-          AddJS:=TJSAdditiveExpressionPlus(CreateElement(TJSAdditiveExpressionPlus,El))
+          AddJS:=TJSAdditiveExpressionPlus(CreateElement(TJSAdditiveExpressionPlus,SrcEl))
         else
-          AddJS:=TJSAdditiveExpressionMinus(CreateElement(TJSAdditiveExpressionMinus,El));
+          AddJS:=TJSAdditiveExpressionMinus(CreateElement(TJSAdditiveExpressionMinus,SrcEl));
         Call.AddArg(AddJS);
         // create "ref.get()"
-        AddJS.A:=TJSCallExpression(CreateElement(TJSCallExpression,El));
-        TJSCallExpression(AddJS.A).Expr:=CreateDotExpression(El,
+        AddJS.A:=TJSCallExpression(CreateElement(TJSCallExpression,SrcEl));
+        TJSCallExpression(AddJS.A).Expr:=CreateDotExpression(SrcEl,
           CreateIdentifierExpr(ExprResolved.IdentEl,AContext),
-          CreatePrimitiveDotExpr(TempRefObjGetterName,El));
+          CreatePrimitiveDotExpr(TempRefObjGetterName,SrcEl));
         // add "b"
         AddJS.B:=ValueJS;
         ValueJS:=nil;
@@ -6551,9 +6581,9 @@ begin
 
     // convert inc(avar,b)  to  a+=b
     if IsInc then
-      AssignSt:=TJSAddEqAssignStatement(CreateElement(TJSAddEqAssignStatement,El))
+      AssignSt:=TJSAddEqAssignStatement(CreateElement(TJSAddEqAssignStatement,SrcEl))
     else
-      AssignSt:=TJSSubEqAssignStatement(CreateElement(TJSSubEqAssignStatement,El));
+      AssignSt:=TJSSubEqAssignStatement(CreateElement(TJSSubEqAssignStatement,SrcEl));
     AssignSt.LHS:=ConvertExpression(El.Params[0],AContext);
     AssignSt.Expr:=ValueJS;
     ValueJS:=nil;
@@ -7639,14 +7669,16 @@ Var
     VarSt: TJSVariableStatement;
     PasFun: TPasFunction;
     FunType: TPasFunctionType;
+    SrcEl: TPasElement;
   begin
     PasFun:=El.Parent as TPasFunction;
     FunType:=PasFun.FuncType;
     ResultEl:=FunType.ResultEl;
 
     // add 'var result=initvalue'
+    SrcEl:=ResultEl;
     VarSt:=CreateVarStatement(ResolverResultVar,
-      CreateValInit(ResultEl.ResultType,nil,El,aContext),ResultEl);
+      CreateValInit(ResultEl.ResultType,nil,SrcEl,aContext),ResultEl);
     Add(VarSt,ResultEl);
     Result:=SLFirst;
   end;
