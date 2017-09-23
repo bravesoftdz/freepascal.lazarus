@@ -1,5 +1,5 @@
 
-{ $Id: dbgrids.pas 55713 2017-08-20 10:25:04Z ondrej $}
+{ $Id: dbgrids.pas 55896 2017-09-22 22:44:43Z juha $}
 {
  /***************************************************************************
                                DBGrids.pas
@@ -298,6 +298,7 @@ type
     FOnColumnMoved: TMovedEvent;
     FOnColumnSized: TNotifyEvent;
     FOnDrawColumnCell: TDrawColumnCellEvent;
+    FOnDrawColumnTitle: TDrawColumnCellEvent;
     FOnFieldEditMask: TGetDbEditMaskEvent;
     FOnTitleClick: TDBGridClickEvent;
     FOnSelectEditor: TDbGridSelEditorEvent;
@@ -498,6 +499,7 @@ type
     property OnColumnMoved: TMovedEvent read FOnColumnMoved write FOnColumnMoved;
     property OnColumnSized: TNotifyEvent read FOnColumnSized write FOnColumnSized;
     property OnDrawColumnCell: TDrawColumnCellEvent read FOnDrawColumnCell write FOnDrawColumnCell;
+    property OnDrawColumnTitle: TDrawColumnCellEvent read FOnDrawColumnTitle write FOnDrawColumnTitle;
     property OnFieldEditMask: TGetDbEditMaskEvent read FOnFieldEditMask write FOnFieldEditMask;
     property OnGetCellHint: TDbGridCellHintEvent read FOnGetCellHint write FOnGetCellHint;
     property OnPrepareCanvas: TPrepareDbGridCanvasEvent read FOnPrepareCanvas write FOnPrepareCanvas;
@@ -605,6 +607,7 @@ type
     property OnColumnSized;
     property OnContextPopup;
     property OnDrawColumnCell;
+    property OnDrawColumnTitle;
     property OnDblClick;
     property OnDragDrop;
     property OnDragOver;
@@ -3121,8 +3124,7 @@ begin
   {$endif}
 end;
 
-procedure TCustomDBGrid.DrawCell(aCol, aRow: Integer; aRect: TRect;
-  aState: TGridDrawState);
+procedure TCustomDBGrid.DrawCell(aCol, aRow: Integer; aRect: TRect; aState: TGridDrawState);
 var
   DataCol: Integer;
 begin
@@ -3141,13 +3143,18 @@ begin
   if not DefaultDrawing then
     DrawCellBackground(aCol, aRow, aRect, aState);
 
-  if (ARow>=FixedRows) and Assigned(OnDrawColumnCell) and
-    not (csDesigning in ComponentState) then begin
-
-    DataCol := ColumnIndexFromGridColumn(aCol);
-    if DataCol>=0 then
-      OnDrawColumnCell(Self, aRect, DataCol, TColumn(Columns[DataCol]), aState);
-
+  if not (csDesigning in ComponentState) then
+  begin
+    if (ARow>=FixedRows) and Assigned(OnDrawColumnCell) then begin
+      DataCol := ColumnIndexFromGridColumn(aCol);
+      if DataCol>=0 then
+        OnDrawColumnCell(Self, aRect, DataCol, TColumn(Columns[DataCol]), aState);
+    end;
+    if (ARow<FixedRows) and Assigned(OnDrawColumnTitle) then begin
+      DataCol := ColumnIndexFromGridColumn(aCol);
+      if DataCol>=0 then
+        OnDrawColumnTitle(Self, aRect, DataCol, TColumn(Columns[DataCol]), aState);
+    end;
   end;
 
   DrawCellGrid(aCol, aRow, aRect, aState);
@@ -3472,11 +3479,9 @@ begin
   try
     Result := GetColumnCount;
     if Result > 0 then begin
-
       if dgTitles in Options then FRCount := 1 else FRCount := 0;
       if dgIndicator in Options then FCCount := 1 else FCCount := 0;
       InternalSetColCount(Result + FCCount);
-
       if FDataLink.Active then begin
         UpdateBufferCount;
         RecCount := FDataLink.RecordCount;
@@ -3489,14 +3494,10 @@ begin
           // if there is one, and if there are no titles
           RecCount := FCCount;
       end;
-
       Inc(RecCount, FRCount);
-
       RowCount := RecCount;
       FixedRows := FRCount;
-
       UpdateGridColumnSizes;
-
       if FDatalink.Active and (FDatalink.ActiveRecord>=0) then
         AdjustEditorBounds(Col, FixedRows + FDatalink.ActiveRecord);
     end;

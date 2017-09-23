@@ -1,4 +1,4 @@
-{ $Id: grids.pas 55766 2017-08-31 21:12:35Z jesus $}
+{ $Id: grids.pas 55895 2017-09-22 21:50:32Z juha $}
 {
  /***************************************************************************
                                Grids.pas
@@ -1259,6 +1259,8 @@ type
     function  CellRect(ACol, ARow: Integer): TRect;
     function  CellToGridZone(aCol,aRow: Integer): TGridZone;
     procedure CheckPosition;
+    function ClearCols: Boolean;
+    function ClearRows: Boolean;
     procedure Clear;
     procedure ClearSelections;
 
@@ -2174,6 +2176,7 @@ begin
 end;
 
 procedure TCustomGrid.InternalAutoFillColumns;
+
   procedure SetColumnWidth(aCol,aWidth: Integer);
   begin
     if csLoading in ComponentState then
@@ -2181,6 +2184,7 @@ procedure TCustomGrid.InternalAutoFillColumns;
     else
       SetColWidths(aCol, aWidth);
   end;
+
 var
   I, ForcedIndex: Integer;
   Count: Integer;
@@ -2277,7 +2281,8 @@ var
   NewRowCount: Integer;
 begin
   OldC := FCols.Count;
-  if ACount=OldC then Exit;
+  if ACount=OldC then
+    Exit;
   if ACount<1 then
     Clear
   else begin
@@ -2855,16 +2860,21 @@ end;
 
 procedure TCustomGrid.SetRawColWidths(ACol: Integer; AValue: Integer);
 begin
-  FCols[ACol]:=Pointer(PtrInt(Avalue));
+  if ACol < FCols.Count then      // Prevent a range error in case of a bug.
+    FCols[ACol]:=Pointer(PtrInt(Avalue))
+  else
+    DebugLn(['TCustomGrid.SetRawColWidths with Range Error: ACol=', ACol, ', Cols.Count=', FCols.Count]);
 end;
 
-procedure TCustomGrid.AdjustCount(IsColumn: Boolean; OldValue, NewValue: Integer
-  );
+procedure TCustomGrid.AdjustCount(IsColumn: Boolean; OldValue, NewValue: Integer);
+
   procedure AddDel(Lst: TList; aCount: Integer);
   begin
-    while lst.Count<aCount do Lst.Add(Pointer(-1)); // default width/height
+    while lst.Count<aCount do
+      Lst.Add(Pointer(-1)); // default width/height
     Lst.Count:=aCount;
   end;
+
 var
   OldCount, NewCount: integer;
 begin
@@ -3028,8 +3038,9 @@ begin
       CheckFixedCount(NewColCount, AValue, FFixedCols, FFixedRows);
       CheckCount(NewColCount, AValue);
       AdjustCount(False, OldR, AValue);
-    end else
-      Clear;
+    end
+    else
+      ClearRows;
   end;
 end;
 
@@ -9624,31 +9635,50 @@ begin
 end;
 {$endif}
 
+function TCustomGrid.ClearCols: Boolean;
+begin
+  Result:=False;
+  if FCols.Count=0 then
+    exit; // already cleared
+  // save some properties
+  FGridPropBackup.FixedColCount := FFixedCols;
+  FGridPropBackup.ColCount      := ColCount;
+  // clear structure
+  FFixedCols:=0;
+  FCols.Count:=0;
+  FGCache.TLColOff := 0;
+  Result:=True;
+end;
+
+function TCustomGrid.ClearRows: Boolean;
+begin
+  Result:=False;
+  if FRows.Count=0 then
+    exit; // already cleared
+  // save some properties
+  FGridPropBackup.FixedRowCount := FFixedRows;
+  FGridPropBackup.RowCount      := RowCount;
+  // clear structure
+  FFixedRows:=0;
+  FRows.Count:=0;
+  FGCache.TlRowOff := 0;
+  Result:=True;
+end;
+
 procedure TCustomGrid.Clear;
 var
   OldR,OldC: Integer;
+  RowChanged, ColChanged: Boolean;
 begin
-  if (FRows.Count=0) and (FCols.Count=0) then
-    exit; // already cleared
-
-  // save some properties
-  FGridPropBackup.ValidData := True;
-  FGridPropBackup.FixedRowCount := FFixedRows;
-  FGridPropBackup.FixedColCount := FFixedCols;
-  FGridPropBackup.ColCount      := ColCount;
-  FGridPropBackup.RowCount      := RowCount;
-
-  // clear structure
   OldR:=RowCount;
   OldC:=ColCount;
-  FFixedCols:=0;
-  FFixedRows:=0;
-  FRows.Count:=0;
-  FCols.Count:=0;
+  RowChanged := ClearRows;
+  ColChanged := ClearCols;
+  if not (RowChanged or ColChanged) then
+    exit; // already cleared
+  FGridPropBackup.ValidData := True;
   FTopLeft:=Point(-1,-1);
   FRange:=Rect(-1,-1,-1,-1);
-  FGCache.TLColOff := 0;
-  FGCache.TlRowOff := 0;
   FGCache.HotCellPainted := false;
   ResetHotCell;
   VisualChange;
