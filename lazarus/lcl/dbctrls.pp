@@ -1,4 +1,4 @@
-{ $Id: dbctrls.pp 54441 2017-03-18 09:20:06Z ondrej $}
+{ $Id: dbctrls.pp 55911 2017-09-24 09:27:53Z juha $}
 {
  /***************************************************************************
                                DbCtrls.pp
@@ -20,7 +20,7 @@
 @abstract(common db aware controls, as in Delphi)
 @author(Andrew Johnson <acjgenius@@earthlink.net>)
 @created(Sun Sep 14 2003)
-@lastmod($Date: 2017-03-18 05:20:06 -0400 (Sat, 18 Mar 2017) $)
+@lastmod($Date: 2017-09-24 05:27:53 -0400 (Sun, 24 Sep 2017) $)
 }
 unit DbCtrls;
 
@@ -802,6 +802,7 @@ Type
     procedure InitializeWnd; override;
     procedure DestroyWnd; override;
     procedure KeyDown(var Key: Word; Shift: TShiftState); override;
+    procedure UTF8KeyPress(var UTF8Key: TUTF8Char); override;
     procedure Loaded; override;
     procedure UpdateData(Sender: TObject); override;
     procedure DataChange(Sender: TObject); override;
