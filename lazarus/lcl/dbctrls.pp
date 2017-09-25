@@ -1,4 +1,4 @@
-{ $Id: dbctrls.pp 55911 2017-09-24 09:27:53Z juha $}
+{ $Id: dbctrls.pp 55912 2017-09-24 12:25:26Z juha $}
 {
  /***************************************************************************
                                DbCtrls.pp
@@ -20,7 +20,7 @@
 @abstract(common db aware controls, as in Delphi)
 @author(Andrew Johnson <acjgenius@@earthlink.net>)
 @created(Sun Sep 14 2003)
-@lastmod($Date: 2017-09-24 05:27:53 -0400 (Sun, 24 Sep 2017) $)
+@lastmod($Date: 2017-09-24 08:25:26 -0400 (Sun, 24 Sep 2017) $)
 }
 unit DbCtrls;
 
@@ -707,6 +707,7 @@ Type
 
   TDBComboBox = class(TCustomDBComboBox)
   protected
+    procedure Change; override;
     procedure DataChange(Sender: TObject); override;
     procedure KeyDown(var Key: Word; Shift: TShiftState); override;
     procedure KeyPress(var Key: char); override;
