@@ -29,7 +29,7 @@ unit agx86int;
 interface
 
     uses
-      cpubase,
+      cpubase,constexp,
       aasmbase,aasmtai,aasmdata,aasmcpu,assemble,cgutils;
 
     type
@@ -39,6 +39,10 @@ interface
         procedure WriteOper(const o:toper;s : topsize; opcode: tasmop;dest : boolean);
         procedure WriteOper_jmp(const o:toper;s : topsize);
       public
+        function single2str(d : single) : string; override;
+        function double2str(d : double) : string; override;
+        function extended2str(e : extended) : string; override;
+        function comp2str(d : bestreal) : string;
         procedure WriteTree(p:TAsmList);override;
         procedure WriteAsmList;override;
         Function  DoAssemble:boolean;override;
@@ -199,7 +203,7 @@ implementation
         ''
       );
 
-    function single2str(d : single) : string;
+    function TX86IntelAssembler.single2str(d : single) : string;
       var
          hs : string;
          p : byte;
@@ -215,7 +219,7 @@ implementation
          single2str:=lower(hs);
       end;
 
-    function double2str(d : double) : string;
+    function TX86IntelAssembler.double2str(d : double) : string;
       var
          hs : string;
          p : byte;
@@ -231,7 +235,7 @@ implementation
          double2str:=lower(hs);
       end;
 
-    function extended2str(e : extended) : string;
+    function TX86IntelAssembler.extended2str(e : extended) : string;
       var
          hs : string;
          p : byte;
@@ -248,7 +252,7 @@ implementation
       end;
 
 
-    function comp2str(d : bestreal) : string;
+    function TX86IntelAssembler.comp2str(d : bestreal) : string;
       type
         pdouble = ^double;
       var
@@ -493,7 +497,7 @@ implementation
       s,
       prefix,
       suffix   : string;
-      hp       : tai;
+      hp,nhp   : tai;
       cpu: tcputype;
       counter,
       lines,
@@ -562,8 +566,12 @@ implementation
                       if LasTSecType<>sec_none then
                         writer.AsmWriteLn('_'+secnames[LasTSecType]+#9#9'ENDS');
                       writer.AsmLn;
+                      if (asminfo^.id=as_i386_wasm) then
+                        s:='DWORD'
+                      else
+                        s:=alignstr(tai_section(hp).secalign);
                       writer.AsmWriteLn('_'+secnames[tai_section(hp).sectype]+#9#9+
-                                 'SEGMENT'#9+alignstr(tai_section(hp).secalign)+' PUBLIC USE32 '''+
+                                 'SEGMENT'#9+s+' PUBLIC USE32 '''+
                                  secnames[tai_section(hp).sectype]+'''');
                     end;
                 end;
@@ -738,12 +746,26 @@ implementation
              begin
                if tai_symbol(hp).has_value then
                  internalerror(2009090802);
+               { wasm is case insensitive, we nned to use only uppercase version 
+                 if both a lowercase and an uppercase version are provided }
+               if (asminfo^.id = as_i386_wasm) then
+                 begin
+                   nhp:=tai(hp.next);
+                   while assigned(nhp) and (nhp.typ in [ait_function_name,ait_force_line]) do
+                     nhp:=tai(nhp.next);
+                   if assigned(nhp) and (tai(nhp).typ=ait_symbol) and
+                      (lower(tai_symbol(nhp).sym.name)=tai_symbol(hp).sym.name) then
+                     begin
+                       writer.AsmWriteln(asminfo^.comment+' '+tai_symbol(hp).sym.name+' removed');
+                       hp:=tai(nhp);
+                     end;
+                 end;
                if tai_symbol(hp).is_global then
                  writer.AsmWriteLn(#9'PUBLIC'#9+tai_symbol(hp).sym.name);
                writer.AsmWrite(tai_symbol(hp).sym.name);
                if assigned(hp.next) and not(tai(hp.next).typ in
                   [ait_const,ait_realconst,ait_string]) then
-                writer.AsmWriteLn(':')
+                 writer.AsmWriteLn(':');
              end;
            ait_symbol_end :
              begin
@@ -869,7 +891,7 @@ implementation
                  if (asminfo^.id = as_i386_wasm) then
                    begin
                      writer.AsmWriteLn(#9'.686p');
-                     writer.AsmWriteLn(#9'.mmx');
+                     writer.AsmWriteLn(#9'.xmm');
                    end
                  else
                    writer.AsmWriteLn(#9'.386p');
@@ -914,12 +936,12 @@ implementation
                    begin
                      if (asminfo^.id = as_i386_wasm) then
                        begin
-                         writer.AsmWrite('.');
+                         {writer.AsmWrite('.');}
                          for cpu:=low(tcputype) to high(tcputype) do
                            begin
                              if tai_directive(hp).name=CPUTypeStr[CPU] then
                                begin
-                                 writer.AsmWriteLn(wasm_cpu_name[cpu]);
+                                 { writer.AsmWriteLn(wasm_cpu_name[cpu]); }
                                  break;
                                end;
                            end;
@@ -1004,7 +1026,7 @@ implementation
           if (asminfo^.id = as_i386_wasm) then
             begin
               writer.AsmWriteLn(#9'.686p');
-              writer.AsmWriteLn(#9'.mmx');
+              writer.AsmWriteLn(#9'.xmm');
             end
           else
             writer.AsmWriteLn(#9'.386p');
