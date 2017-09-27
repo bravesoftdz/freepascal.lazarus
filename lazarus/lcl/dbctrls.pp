@@ -1,4 +1,4 @@
-{ $Id: dbctrls.pp 55912 2017-09-24 12:25:26Z juha $}
+{ $Id: dbctrls.pp 55927 2017-09-26 10:04:16Z juha $}
 {
  /***************************************************************************
                                DbCtrls.pp
@@ -20,7 +20,7 @@
 @abstract(common db aware controls, as in Delphi)
 @author(Andrew Johnson <acjgenius@@earthlink.net>)
 @created(Sun Sep 14 2003)
-@lastmod($Date: 2017-09-24 08:25:26 -0400 (Sun, 24 Sep 2017) $)
+@lastmod($Date: 2017-09-26 06:04:16 -0400 (Tue, 26 Sep 2017) $)
 }
 unit DbCtrls;
 
@@ -903,7 +903,7 @@ Type
     procedure Change; override;
     procedure KeyDown(var Key: Word; Shift: TShiftState); override;
     procedure KeyPress(var Key:Char); override;
-    procedure WndProc(var AMessage : TLMessage); override;
+    procedure WndProc(var Message : TLMessage); override;
     class procedure WSRegisterClass; override;
   public
     constructor Create(TheOwner: TComponent); override;

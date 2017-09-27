@@ -1,5 +1,5 @@
 {%MainUnit ../interfacebase.pp}
-{ $Id: interfacebase.inc 41389 2013-05-25 09:22:25Z juha $
+{ $Id: interfacebase.inc 55929 2017-09-26 11:28:00Z juha $
 ******************************************************************************
                                   TWidgetSet
 
@@ -89,11 +89,8 @@ begin
     lcFormIcon,
     lcModalWindow,
     lcReceivesLMClearCutCopyPasteReliably,
-    lcEmulatedMDI:
-      Result := LCL_CAPABILITY_YES;
-    lcSendsUTF8KeyPress:
-      Result := LCL_CAPABILITY_YES;
-    lcAccessibilitySupport: Result := LCL_CAPABILITY_NO;
+    lcSendsUTF8KeyPress,
+    lcEmulatedMDI: Result := LCL_CAPABILITY_YES;
   else
     Result := LCL_CAPABILITY_NO;
   end;
