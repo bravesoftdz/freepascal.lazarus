@@ -12,7 +12,7 @@
     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 
  **********************************************************************}
-unit frmreportdesignermain;
+unit frmfpreportdesignermain;
 
 {$mode objfpc}{$H+}
 
@@ -21,7 +21,7 @@ interface
 uses
   Classes, SysUtils, FileUtil, Forms, Controls, Graphics, Dialogs, StdCtrls,
   Menus, ActnList, ComCtrls, ExtCtrls, IniPropStorage, Types, fpreport, fpreportdesignctrl,
-  fraReportObjectInspector, designreportdata, frareportdata, fpreportdb;
+  fraReportObjectInspector, fpreportdesignreportdata, frafpreportdata, fpreportdb;
 
 type
   // If you add something here, do not forget to add to AllReportDesignOptions.
@@ -270,6 +270,7 @@ type
     procedure GetReportDataNames(Sender: TObject; List: TStrings);
     procedure InitialiseData;
 {$ENDIF}
+    procedure DoSelectionModifiedByOI(Sender: TObject);
     function GetModified: boolean;
     procedure ActivateDesignerForElement(AElement: TFPReportElement);
     procedure SetBandActionTags;
@@ -407,6 +408,7 @@ begin
 // END OF DEMO
   SetFileCaption('');
   FOI.OnSelectElement:=@DoSelectComponent;
+  FOI.OnModified:=@DoSelectionModifiedByOI;
 end;
 
 procedure TFPReportDesignerForm.FormCloseQuery(Sender: TObject;
@@ -788,6 +790,22 @@ begin
     begin
     Result:=PageDesigner(I).Objects.Modified;
     Inc(I);
+    end;
+end;
+
+procedure TFPReportDesignerForm.DoSelectionModifiedByOI(Sender: TObject);
+begin
+  if Assigned(CurrentDesigner) then
+    begin
+    if (FOI.ObjectList.Count=1) and
+       (FOI.ObjectList.Elements[0]=CurrentDesigner.Page) then
+      begin
+      CurrentDesigner.UpdatePageParams;
+      CurrentDesigner.Reset;
+      CurrentDesigner.Objects.SelectElement(CurrentDesigner.Page)
+      end
+    else
+      CurrentDesigner.Invalidate;
     end;
 end;
 
