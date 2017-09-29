@@ -1252,7 +1252,8 @@ type
     // log and messages
     class procedure UnmangleSourceLineNumber(LineNumber: integer;
       out Line, Column: integer);
-    class function GetElementSourcePosStr(El: TPasElement): string;
+    class function GetDbgSourcePosStr(El: TPasElement): string;
+    function GetElementSourcePosStr(El: TPasElement): string;
     procedure SetLastMsg(const id: int64; MsgType: TMessageType; MsgNumber: integer;
       Const Fmt : String; Args : Array of const; PosEl: TPasElement);
     procedure LogMsg(const id: int64; MsgType: TMessageType; MsgNumber: integer;
@@ -1374,6 +1375,7 @@ type
     function IsArrayType(const ResolvedEl: TPasResolverResult): boolean;
     function IsTypeCast(Params: TParamsExpr): boolean;
     function ProcNeedsParams(El: TPasProcedureType): boolean;
+    function IsProcOverride(AncestorProc, DescendantProc: TPasProcedure): boolean;
     function GetRangeLength(RangeExpr: TPasExpr): MaxPrecInt;
     function EvalRangeLimit(RangeExpr: TPasExpr; Flags: TResEvalFlags;
       EvalLow: boolean; ErrorEl: TPasElement): TResEvalValue; virtual; // compute low() or high()
@@ -2743,8 +2745,7 @@ begin
         end;
 
       // check if previous found proc is override of found proc
-      if (PrevProc.IsOverride)
-          and (TPasProcedureScope(PrevProc.CustomData).OverriddenProc=Proc) then
+      if IsProcOverride(Proc,PrevProc) then
         begin
         // previous found proc is override of found proc -> skip
         exit;
@@ -8049,7 +8050,10 @@ function TPasResolver.BI_SetLength_OnGetCallCompatibility(
 var
   Params: TParamsExpr;
   Param: TPasExpr;
-  ParamResolved: TPasResolverResult;
+  ParamResolved, DimResolved: TPasResolverResult;
+  ArgNo: Integer;
+  DynArr: TPasArrayType;
+  ElType: TPasType;
 begin
   if not CheckBuiltInMinParamCount(Proc,Expr,2,RaiseOnError) then
     exit(cIncompatible);
@@ -8059,6 +8063,7 @@ begin
   Param:=Params.Params[0];
   ComputeElement(Param,ParamResolved,[rcNoImplicitProc]);
   Result:=cIncompatible;
+  DynArr:=nil;
   if ResolvedElCanBeVarParam(ParamResolved) then
     begin
     if ParamResolved.BaseType in btAllStrings then
@@ -8066,7 +8071,10 @@ begin
     else if ParamResolved.BaseType=btContext then
       begin
       if IsDynArray(ParamResolved.TypeEl) then
+        begin
         Result:=cExact;
+        DynArr:=ParamResolved.TypeEl as TPasArrayType;
+        end;
       end;
     end;
   if Result=cIncompatible then
@@ -8074,17 +8082,25 @@ begin
       'string or dynamic array variable',RaiseOnError));
 
   // second param: new length
-  Param:=Params.Params[1];
-  ComputeElement(Param,ParamResolved,[]);
-  Result:=cIncompatible;
-  if (rrfReadable in ParamResolved.Flags)
-      and (ParamResolved.BaseType in btAllInteger) then
-    Result:=cExact;
-  if Result=cIncompatible then
-    exit(CheckRaiseTypeArgNo(20170329160338,2,Param,ParamResolved,
-      'integer',RaiseOnError));
+  ArgNo:=2;
+  repeat
+    Param:=Params.Params[ArgNo-1];
+    ComputeElement(Param,DimResolved,[]);
+    Result:=cIncompatible;
+    if (rrfReadable in DimResolved.Flags)
+        and (DimResolved.BaseType in btAllInteger) then
+      Result:=cExact;
+    if Result=cIncompatible then
+      exit(CheckRaiseTypeArgNo(20170329160338,ArgNo,Param,DimResolved,
+        'integer',RaiseOnError));
+    if (DynArr=nil) or (ArgNo=length(Params.Params)) then break;
+    ElType:=ResolveAliasType(DynArr.ElType);
+    if not IsDynArray(ElType) then break;
+    DynArr:=ElType as TPasArrayType;
+    inc(ArgNo);
+  until false;
 
-  Result:=CheckBuiltInMaxParamCount(Proc,Params,2,RaiseOnError);
+  Result:=CheckBuiltInMaxParamCount(Proc,Params,ArgNo,RaiseOnError);
 end;
 
 procedure TPasResolver.BI_SetLength_OnFinishParamsExpr(
@@ -9869,13 +9885,25 @@ begin
   end;
 end;
 
-class function TPasResolver.GetElementSourcePosStr(El: TPasElement): string;
+class function TPasResolver.GetDbgSourcePosStr(El: TPasElement): string;
 var
   Line, Column: integer;
 begin
   if El=nil then exit('nil');
   UnmangleSourceLineNumber(El.SourceLinenumber,Line,Column);
   Result:=El.SourceFilename+'('+IntToStr(Line);
+  if Column>0 then
+    Result:=Result+','+IntToStr(Column);
+  Result:=Result+')';
+end;
+
+function TPasResolver.GetElementSourcePosStr(El: TPasElement): string;
+var
+  Line, Column: integer;
+begin
+  if El=nil then exit('nil');
+  UnmangleSourceLineNumber(El.SourceLinenumber,Line,Column);
+  Result:=CurrentParser.Scanner.FormatPath(El.SourceFilename)+'('+IntToStr(Line);
   if Column>0 then
     Result:=Result+','+IntToStr(Column);
   Result:=Result+')';
@@ -13674,6 +13702,22 @@ end;
 function TPasResolver.ProcNeedsParams(El: TPasProcedureType): boolean;
 begin
   Result:=(El.Args.Count>0) and (TPasArgument(El.Args[0]).ValueExpr=nil);
+end;
+
+function TPasResolver.IsProcOverride(AncestorProc, DescendantProc: TPasProcedure
+  ): boolean;
+var
+  Proc, OverriddenProc: TPasProcedure;
+begin
+  Result:=false;
+  Proc:=DescendantProc;
+  if not Proc.IsOverride then exit;
+  if not AncestorProc.IsOverride and not AncestorProc.IsVirtual then exit;
+  repeat
+    OverriddenProc:=TPasProcedureScope(Proc.CustomData).OverriddenProc;
+    if AncestorProc=OverriddenProc then exit(true);
+    Proc:=OverriddenProc;
+  until Proc=nil;
 end;
 
 function TPasResolver.GetRangeLength(RangeExpr: TPasExpr): MaxPrecInt;
