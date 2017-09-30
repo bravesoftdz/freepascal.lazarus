@@ -1,5 +1,5 @@
 
-{ $Id: dbgrids.pas 55940 2017-09-28 12:07:22Z juha $}
+{ $Id: dbgrids.pas 55942 2017-09-29 11:57:30Z juha $}
 {
  /***************************************************************************
                                DBGrids.pas
@@ -2381,7 +2381,12 @@ var
       end;
       GridFlags := GridFlags + [gfEditingDone];
       if (DeltaCol<>0) then
-        Col := Col + DeltaCol;
+        if Col + DeltaCol < FixedCols then
+          Col := FixedCols
+        else if Col + DeltaCol >= ColCount then
+          Col := ColCount - 1
+        else
+          Col := Col + DeltaCol;
       GridFlags := GridFlags - [gfEditingDone];
     end else
     if AReset then
@@ -2396,7 +2401,7 @@ begin
       begin
         doOnKeyDown;
         if (Key<>0) and ValidDataset then begin
-          if (dgTabs in Options) and not (dgRowSelect in Options) then begin
+          if (dgTabs in Options) then begin
 
             if ((ssShift in shift) and
                (Col<=GetFirstVisibleColumn) and (Row<=GetFirstVisibleRow)) then begin
@@ -2428,7 +2433,7 @@ begin
           key:=0;
           if (dgEditing in Options) and not EditorMode then
             EditorMode:=true
-          else if not (dgRowSelect in Options) then begin
+          else begin
             GetDeltaMoveNext(ssShift in Shift, DeltaCol, DeltaRow, AutoAdvance);
             MoveSel(True);
           end;
