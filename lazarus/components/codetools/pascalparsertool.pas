@@ -272,6 +272,7 @@ type
     // sections / scan range
     function FindRootNode(Desc: TCodeTreeNodeDesc): TCodeTreeNode;
     function FindInterfaceNode: TCodeTreeNode;
+    function FindUsesNode(Section: TCodeTreeNode): TCodeTreeNode;
     function FindMainUsesNode(UseContainsSection: boolean = false): TCodeTreeNode;
     function FindImplementationNode: TCodeTreeNode;
     function FindImplementationUsesNode: TCodeTreeNode;
@@ -635,8 +636,14 @@ begin
       //if (ExtractFileNameOnly(MainFilename)='androidr14') and (CurNode<>nil) then
         //debugln(['TPascalParserTool.BuildTree CurNode=',CurNode.DescAsString]);
       if (CurNode=nil)
-      or ((CurNode.Desc in AllSourceTypes) and (CurNode.FirstChild=nil)) then begin
+      or ((CurNode.Desc in AllSourceTypes)
+        and ((CurNode.FirstChild=nil)
+          or ((CurNode.FirstChild.Desc=ctnIdentifier)
+            and (CurNode.FirstChild.NextBrother=nil))))
+      then begin
         // parse source from the beginning
+        if CurNode<>nil then
+          DoDeleteNodes(CurNode.FirstChild);
 
         if (CurPos.StartPos=1) and (Src<>'') then begin
           // skip shebang
@@ -682,6 +689,7 @@ begin
         CurNode.Desc:=CurSection;
         ScannedRange:=lsrSourceType;
         if ord(Range)<=ord(ScannedRange) then exit;
+
         if HasSourceType then begin
           aNameSpace:='';
           repeat
@@ -690,6 +698,10 @@ begin
             if (CurPos.Flag<>cafWord)
             or (CurSection in [ctnUnit,ctnPackage]) then
               AtomIsIdentifierSaveE;
+            if aNameSpace='' then begin
+              CreateChildNode;
+              CurNode.Desc:=ctnSrcName;
+            end;
             CreateChildNode;
             CurNode.Desc:=ctnIdentifier;
             CurNode.EndPos:=CurPos.EndPos;
@@ -702,11 +714,16 @@ begin
             end else
               break;
           until false;
+          if CurNode.Desc=ctnSrcName then begin
+            CurNode.EndPos:=CurPos.StartPos;
+            EndChildNode;
+          end;
           if CurSection in [ctnProgram,ctnLibrary,ctnPackage] then
             AddedNameSpace:=aNameSpace;
         end;
         ScannedRange:=lsrSourceName;
         if ord(Range)<=ord(ScannedRange) then exit;
+
         if HasSourceType then begin
           if (CurSection=ctnProgram)
           and (CurPos.Flag=cafRoundBracketOpen) then begin
@@ -792,7 +809,7 @@ begin
             MoveCursorToCleanPos(Node.StartPos);
           end else begin
             SubNode:=Node.FirstChild;
-            while (SubNode<>nil) and (SubNode.Desc=ctnIdentifier) do
+            if (SubNode<>nil) and (SubNode.Desc=ctnSrcName) then
               SubNode:=SubNode.NextBrother;
             if (SubNode<>nil) and (SubNode.Desc=ctnUsesSection) then begin
               // uses section is already parsed
@@ -5998,6 +6015,18 @@ begin
   Result:=FindRootNode(ctnInterface);
 end;
 
+function TPascalParserTool.FindUsesNode(Section: TCodeTreeNode): TCodeTreeNode;
+begin
+  Result:=nil;
+  if Section=nil then exit;
+  Result:=Section.FirstChild;
+  if (Result<>nil) and (Result.Desc=ctnSrcName) then
+    Result:=Result.NextBrother;
+  if Result=nil then exit;
+  if Result.Desc<>ctnUsesSection then
+    Result:=nil;
+end;
+
 function TPascalParserTool.FindImplementationNode: TCodeTreeNode;
 begin
   Result:=FindRootNode(ctnImplementation);
@@ -6063,7 +6092,7 @@ begin
       if Result=nil then exit;
     end;
     Result:=Result.FirstChild;
-    while (Result<>nil) and (Result.Desc=ctnIdentifier) do
+    if (Result<>nil) and (Result.Desc=ctnSrcName) then
       Result:=Result.NextBrother;
     if (Result=nil) then exit;
     if (Result.Desc<>ctnUsesSection) then Result:=nil;
@@ -6093,6 +6122,7 @@ function TPascalParserTool.FindScanRangeNode(Range: TLinkScannerRange
 { search a node of the Range or higher
   lsrNone and lsrInit are always nil
   lsrSourceType is the unit/program/library node if exists
+  lsrSourceName is the ctnIdentifier if exists
   Otherwise it is the next node (e.g. in a unit the interface)
 }
 begin
@@ -6101,11 +6131,13 @@ begin
   if (ord(Range)<=ord(lsrInit)) then exit;
   Result:=Tree.Root;
   if Result=nil then exit;
-  // lsrSourceType;
+  // lsrSourceType
   if Range=lsrSourceType then exit;
-  // lsrSourceName;
+  // lsrSourceName
   if Range=lsrSourceName then begin
-    // the source name has no node of its own
+    if (Result.Desc in AllSourceTypes) and (Result.FirstChild<>nil)
+    and (Result.FirstChild.Desc=ctnSrcName) then
+      Result:=Result.FirstChild;
     exit;
   end;
   if ord(Range)<ord(lsrEnd) then begin
@@ -6122,6 +6154,8 @@ begin
           exit;
         end;
         Result:=Result.FirstChild;
+        if (Result.NextBrother<>nil) and (Result.Desc=ctnSrcName) then
+          Result:=Result.NextBrother;
         // lsrMainUsesSectionStart in unit
         if Range=lsrMainUsesSectionStart then exit;
         if Result.Desc=ctnUsesSection then begin
@@ -6147,6 +6181,8 @@ begin
             exit;
           end;
           Result:=Result.FirstChild;
+          if (Result.NextBrother<>nil) and (Result.Desc=ctnSrcName) then
+            Result:=Result.NextBrother;
           // lsrImplementationUsesSectionStart
           if Range=lsrImplementationUsesSectionStart then exit;
           if Result.Desc=ctnUsesSection then begin
@@ -6191,7 +6227,7 @@ begin
           exit;
         end;
         Result:=Result.FirstChild;
-        while (Result.NextBrother<>nil) and (Result.Desc=ctnIdentifier) do
+        if (Result.NextBrother<>nil) and (Result.Desc=ctnSrcName) then
           Result:=Result.NextBrother;
         if Result.Desc<>ctnUsesSection then exit;
         // lsrMainUsesSectionStart in program
@@ -6208,7 +6244,7 @@ begin
           exit;
         end;
         Result:=Result.FirstChild;
-        while (Result.NextBrother<>nil) and (Result.Desc=ctnIdentifier) do
+        if (Result.NextBrother<>nil) and (Result.Desc=ctnSrcName) then
           Result:=Result.NextBrother;
         if Result.Desc=ctnUsesSection then
           Result:=Result.NextSkipChilds;
@@ -6238,7 +6274,7 @@ begin
   Result:=FindSectionNodeAtPos(P);
   if Result=nil then exit;
   UsesNode:=Result.FirstChild;
-  while (UsesNode<>nil) and (UsesNode.Desc=ctnIdentifier) do
+  if (UsesNode<>nil) and (UsesNode.Desc=ctnSrcName) then
     UsesNode:=UsesNode.NextBrother;
   if (UsesNode<>nil) and (UsesNode.Desc=ctnUsesSection) then
   begin
