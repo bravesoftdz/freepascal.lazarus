@@ -341,6 +341,7 @@ resourcestring
   SErrCallConvNotSupported = 'Calling convention not supported: %s';
   SErrTypeKindNotSupported = 'Type kind is not supported: %s';
   SErrCallbackHandlerNil = 'Callback handler is Nil';
+  SErrMissingSelfParam = 'Missing self parameter';
 
 implementation
 
@@ -545,10 +546,11 @@ begin
   if aIsConstructor then
     raise ENotImplemented.Create(SErrInvokeNotImplemented);
 
-  { ToDo: what exactly is the purpose of IsStatic? }
   flags := [];
   if aIsStatic then
-    Include(flags, fcfStatic);
+    Include(flags, fcfStatic)
+  else if Length(aArgs) = 0 then
+    raise EInvocationError.Create(SErrMissingSelfParam);
 
   SetLength(funcargs, Length(aArgs));
   for i := Low(aArgs) to High(aArgs) do begin
@@ -619,10 +621,13 @@ begin
     Exit(Nil);
 {$ifdef FPC_HAS_FEATURE_THREADING}
   EnterCriticalsection(FLock);
+  try
 {$endif}
-  Result := Copy(FTypesList, 0, FTypeCount);
+    Result := Copy(FTypesList, 0, FTypeCount);
 {$ifdef FPC_HAS_FEATURE_THREADING}
-  LeaveCriticalsection(FLock);
+  finally
+    LeaveCriticalsection(FLock);
+  end;
 {$endif}
 end;
 
@@ -634,38 +639,41 @@ begin
     Exit(Nil);
 {$ifdef FPC_HAS_FEATURE_THREADING}
   EnterCriticalsection(FLock);
+  try
 {$endif}
-  Result := Nil;
-  for i := 0 to FTypeCount - 1 do
-    begin
-      if FTypesList[i].FTypeInfo = ATypeInfo then
-        begin
-          Result := FTypesList[i];
-          Break;
-        end;
-    end;
-  if not Assigned(Result) then
-    begin
-      if FTypeCount = Length(FTypesList) then
-        begin
-          SetLength(FTypesList, FTypeCount * 2);
-        end;
-      case ATypeInfo^.Kind of
-        tkClass   : Result := TRttiInstanceType.Create(ATypeInfo);
-        tkSString,
-        tkLString,
-        tkAString,
-        tkUString,
-        tkWString : Result := TRttiStringType.Create(ATypeInfo);
-        tkFloat   : Result := TRttiFloatType.Create(ATypeInfo);
-      else
-        Result := TRttiType.Create(ATypeInfo);
+    Result := Nil;
+    for i := 0 to FTypeCount - 1 do
+      begin
+        if FTypesList[i].FTypeInfo = ATypeInfo then
+          begin
+            Result := FTypesList[i];
+            Break;
+          end;
       end;
-      FTypesList[FTypeCount] := Result;
-      Inc(FTypeCount);
-    end;
+    if not Assigned(Result) then
+      begin
+        if FTypeCount = Length(FTypesList) then
+          begin
+            SetLength(FTypesList, FTypeCount * 2);
+          end;
+        case ATypeInfo^.Kind of
+          tkClass   : Result := TRttiInstanceType.Create(ATypeInfo);
+          tkSString,
+          tkLString,
+          tkAString,
+          tkUString,
+          tkWString : Result := TRttiStringType.Create(ATypeInfo);
+          tkFloat   : Result := TRttiFloatType.Create(ATypeInfo);
+        else
+          Result := TRttiType.Create(ATypeInfo);
+        end;
+        FTypesList[FTypeCount] := Result;
+        Inc(FTypeCount);
+      end;
 {$ifdef FPC_HAS_FEATURE_THREADING}
-  LeaveCriticalsection(FLock);
+  finally
+    LeaveCriticalsection(FLock);
+  end;
 {$endif}
 end;
 
