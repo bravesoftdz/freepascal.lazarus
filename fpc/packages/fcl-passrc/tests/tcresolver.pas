@@ -462,6 +462,7 @@ type
 
     // class of
     Procedure TestClassOf;
+    Procedure TestClassOfAlias;
     Procedure TestClassOfNonClassFail;
     Procedure TestClassOfIsOperatorFail;
     Procedure TestClassOfAsOperatorFail;
@@ -618,6 +619,13 @@ type
     Procedure TestPointer_TypecastFromMethodTypeFail;
     Procedure TestPointer_TypecastMethod_proMethodAddrAsPointer;
     Procedure TestPointer_OverloadSignature;
+
+    // resourcestrings
+    Procedure TestResourcestring;
+    Procedure TestResourcestringAssignFail;
+    Procedure TestResourcestringLocalFail;
+    Procedure TestResourcestringInConstFail;
+    Procedure TestResourcestringPassVarArgFail;
 
     // hints
     Procedure TestHint_ElementHints;
@@ -7378,6 +7386,29 @@ begin
   ParseProgram;
 end;
 
+procedure TTestResolver.TestClassOfAlias;
+begin
+  StartProgram(false);
+  Add([
+  'type',
+  '  TObject = class',
+  '  end;',
+  '  TBird = TObject;',
+  '  TBirds = class of TBird;',
+  '  TEagles = TBirds;',
+  'var',
+  '  o: TBird;',
+  '  c: TEagles;',
+  'begin',
+  '  c:=TObject;',
+  '  c:=TBird;',
+  '  if c=TObject then ;',
+  '  if c=TBird then ;',
+  '  if o is c then ;',
+  '']);
+  ParseProgram;
+end;
+
 procedure TTestResolver.TestClassOfNonClassFail;
 begin
   StartProgram(false);
@@ -10395,6 +10426,70 @@ begin
   Add('  {@tobject}DoIt(b);');
   Add('  {@tclass}DoIt(bc);');
   ParseProgram;
+end;
+
+procedure TTestResolver.TestResourcestring;
+begin
+  StartProgram(false);
+  Add([
+  'const Foo = ''foo'';',
+  'Resourcestring',
+  '  Bar = foo;',
+  '  Red = ''Red'';',
+  '  r = ''Rd''+foo;',
+  'procedure DoIt(s: string; const h: string); begin end;',
+  'begin',
+  '  if bar=red then ;',
+  '  if bar=''a'' then ;',
+  '  doit(r,r);',
+  '']);
+  ParseProgram;
+end;
+
+procedure TTestResolver.TestResourcestringAssignFail;
+begin
+  StartProgram(false);
+  Add([
+  'Resourcestring Foo = ''bar'';',
+  'begin',
+  '  Foo:=''a'';',
+  '']);
+  CheckResolverException(sVariableIdentifierExpected,nVariableIdentifierExpected);
+end;
+
+procedure TTestResolver.TestResourcestringLocalFail;
+begin
+  StartProgram(false);
+  Add([
+  'procedure DoIt;',
+  'Resourcestring Foo = ''bar'';',
+  'begin end;',
+  'begin;',
+  '']);
+  CheckParserException(SParserResourcestringsMustBeGlobal,nParserResourcestringsMustBeGlobal);
+end;
+
+procedure TTestResolver.TestResourcestringInConstFail;
+begin
+  StartProgram(false);
+  Add([
+  'Resourcestring Foo = ''foo'';',
+  'const Bar = ''Prefix''+Foo;',
+  'begin',
+  '']);
+  CheckResolverException(sConstantExpressionExpected,nConstantExpressionExpected);
+end;
+
+procedure TTestResolver.TestResourcestringPassVarArgFail;
+begin
+  StartProgram(false);
+  Add([
+  'Resourcestring Bar = ''foo'';',
+  'procedure DoIt(var s: string); begin end;',
+  'begin',
+  '  doit(bar);',
+  '']);
+  CheckResolverException(sVariableIdentifierExpected,nVariableIdentifierExpected);
 end;
 
 procedure TTestResolver.TestHint_ElementHints;

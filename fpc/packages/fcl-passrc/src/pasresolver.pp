@@ -982,6 +982,7 @@ type
     procedure AddRecordType(El: TPasRecordType); virtual;
     procedure AddClassType(El: TPasClassType); virtual;
     procedure AddVariable(El: TPasVariable); virtual;
+    procedure AddResourceString(El: TPasResString); virtual;
     procedure AddEnumType(El: TPasEnumType); virtual;
     procedure AddEnumValue(El: TPasEnumValue); virtual;
     procedure AddProperty(El: TPasProperty); virtual;
@@ -1035,6 +1036,7 @@ type
     procedure FinishClassOfType(El: TPasClassOfType); virtual;
     procedure FinishArrayType(El: TPasArrayType); virtual;
     procedure FinishConstDef(El: TPasConst); virtual;
+    procedure FinishResourcestring(El: TPasResString); virtual;
     procedure FinishProcedure(aProc: TPasProcedure); virtual;
     procedure FinishProcedureType(El: TPasProcedureType); virtual;
     procedure FinishMethodDeclHeader(Proc: TPasProcedure); virtual;
@@ -1359,6 +1361,7 @@ type
     function GetPasClassAncestor(ClassEl: TPasClassType; SkipAlias: boolean): TPasType;
     function GetLoop(El: TPasElement): TPasImplElement;
     function ResolveAliasType(aType: TPasType): TPasType;
+    function ResolveAliasTypeEl(El: TPasElement): TPasType; inline;
     function ExprIsAddrTarget(El: TPasExpr): boolean;
     function IsNameExpr(El: TPasExpr): boolean; inline; // TSelfExpr or TPrimitiveExpr with Kind=pekIdent
     function GetNameExprValue(El: TPasExpr): string; // TSelfExpr or TPrimitiveExpr with Kind=pekIdent
@@ -3228,73 +3231,79 @@ begin
 end;
 
 procedure TPasResolver.FinishTypeSection(El: TPasDeclarations);
+
+  function ReplaceDestType(AliasType: TPasAliasType; const DestName: string;
+    MustExist: boolean; ErrorEl: TPasElement): boolean;
+  // returns true if replaces
+  var
+    Abort: boolean;
+    Data: TPRFindData;
+    OldDestType: TPasType;
+  begin
+    Abort:=false;
+    Data:=Default(TPRFindData);
+    Data.ErrorPosEl:=ErrorEl;
+    (TopScope as TPasIdentifierScope).IterateElements(DestName,
+      TopScope,@OnFindFirstElement,@Data,Abort);
+    if (Data.Found=nil) then
+      if MustExist then
+        RaiseIdentifierNotFound(20170216151543,DestName,ErrorEl)
+      else
+        exit(false);
+    if Data.Found.ClassType<>TPasClassType then
+      RaiseXExpectedButYFound(20170216151548,'class',Data.Found.ElementTypeName,ErrorEl);
+    // replace unresolved
+    OldDestType:=AliasType.DestType;
+    AliasType.DestType:=TPasType(Data.Found);
+    AliasType.DestType.AddRef;
+    OldDestType.Release;
+    Result:=true;
+  end;
+
 var
   i: Integer;
   Decl: TPasElement;
   ClassOfEl: TPasClassOfType;
-  Data: TPRFindData;
   UnresolvedEl: TUnresolvedPendingRef;
-  Abort: boolean;
   OldClassType: TPasClassType;
-  ClassOfName: String;
+  TypeEl: TPasType;
+  C: TClass;
 begin
   // resolve pending forwards
   for i:=0 to El.Declarations.Count-1 do
     begin
     Decl:=TPasElement(El.Declarations[i]);
-    if Decl is TPasClassType then
+    C:=Decl.ClassType;
+    if C.InheritsFrom(TPasClassType) then
       begin
       if TPasClassType(Decl).IsForward and (TPasClassType(Decl).CustomData=nil) then
         RaiseMsg(20170216151534,nForwardTypeNotResolved,sForwardTypeNotResolved,[Decl.Name],Decl);
       end
-    else if (Decl.ClassType=TPasClassOfType) then
+    else if (C=TPasClassOfType) then
       begin
       ClassOfEl:=TPasClassOfType(Decl);
-      Data:=Default(TPRFindData);
-      if (ClassOfEl.DestType.ClassType=TUnresolvedPendingRef) then
+      TypeEl:=ClassOfEl.DestType;
+      if (TypeEl.ClassType=TUnresolvedPendingRef) then
         begin
         // forward class-of -> resolve now
-        UnresolvedEl:=TUnresolvedPendingRef(ClassOfEl.DestType);
-        ClassOfName:=UnresolvedEl.Name;
+        UnresolvedEl:=TUnresolvedPendingRef(TypeEl);
         {$IFDEF VerbosePasResolver}
-        writeln('TPasResolver.FinishTypeSection resolving "',ClassOfEl.Name,'" = class of unresolved "',ClassOfName,'"');
+        writeln('TPasResolver.FinishTypeSection resolving "',ClassOfEl.Name,'" = class of unresolved "',TypeEl.Name,'"');
         {$ENDIF}
-        Data.ErrorPosEl:=UnresolvedEl;
-        Abort:=false;
-        (TopScope as TPasIdentifierScope).IterateElements(ClassOfName,
-          TopScope,@OnFindFirstElement,@Data,Abort);
-        if (Data.Found=nil) then
-          RaiseIdentifierNotFound(20170216151543,UnresolvedEl.Name,UnresolvedEl);
-        if Data.Found.ClassType<>TPasClassType then
-          RaiseXExpectedButYFound(20170216151548,'class',Data.Found.ElementTypeName,UnresolvedEl);
-        // replace unresolved
-        ClassOfEl.DestType:=TPasClassType(Data.Found);
-        ClassOfEl.DestType.AddRef;
-        UnresolvedEl.Release;
+        ReplaceDestType(ClassOfEl,TypeEl.Name,true,UnresolvedEl);
         end
-      else
+      else if TypeEl.ClassType=TPasClassType then
         begin
         // class-of has found a type
         // another later in the same type section has priority -> check
-        OldClassType:=ClassOfEl.DestType as TPasClassType;
-        if ClassOfEl.DestType.Parent=ClassOfEl.Parent then
+        OldClassType:=TypeEl as TPasClassType;
+        if OldClassType.Parent=ClassOfEl.Parent then
           continue; // class in same type section -> ok
         // class not in same type section -> check
-        ClassOfName:=OldClassType.Name;
         {$IFDEF VerbosePasResolver}
-        writeln('TPasResolver.FinishTypeSection resolving "',ClassOfEl.Name,'" = class of resolved "',ClassOfName,'"');
+        writeln('TPasResolver.FinishTypeSection improving "',ClassOfEl.Name,'" = class of resolved "',TypeEl.Name,'"');
         {$ENDIF}
-        Data.ErrorPosEl:=ClassOfEl;
-        Abort:=false;
-        (TopScope as TPasIdentifierScope).IterateElements(ClassOfName,
-          TopScope,@OnFindFirstElement,@Data,Abort);
-        if (Data.Found=nil) then
-          continue;
-        if Data.Found.ClassType<>TPasClassType then
-          RaiseXExpectedButYFound(20170221171040,'class',Data.Found.ElementTypeName,ClassOfEl);
-        ClassOfEl.DestType:=TPasClassType(Data.Found);
-        ClassOfEl.DestType.AddRef;
-        OldClassType.Release;
+        ReplaceDestType(ClassOfEl,TypeEl.Name,false,ClassOfEl);
         end;
       end;
     end;
@@ -3440,9 +3449,12 @@ begin
 end;
 
 procedure TPasResolver.FinishClassOfType(El: TPasClassOfType);
+var
+  TypeEl: TPasType;
 begin
-  if El.DestType is TUnresolvedPendingRef then exit;
-  if El.DestType is TPasClassType then exit;
+  TypeEl:=ResolveAliasType(El.DestType);
+  if TypeEl is TUnresolvedPendingRef then exit;
+  if TypeEl is TPasClassType then exit;
   RaiseMsg(20170216151602,nIncompatibleTypesGotExpected,sIncompatibleTypesGotExpected,
     [El.DestType.Name,'class'],El);
 end;
@@ -3482,6 +3494,16 @@ begin
     end
   else
     Eval(El.Expr,[refConst])
+end;
+
+procedure TPasResolver.FinishResourcestring(El: TPasResString);
+var
+  ResolvedEl: TPasResolverResult;
+begin
+  ResolveExpr(El.Expr,rraRead);
+  ComputeElement(El.Expr,ResolvedEl,[rcConstant]);
+  if not (ResolvedEl.BaseType in btAllStringAndChars) then
+    RaiseXExpectedButYFound(20171004135753,'string',GetTypeDescription(ResolvedEl),El.Expr);
 end;
 
 procedure TPasResolver.FinishProcedure(aProc: TPasProcedure);
@@ -6159,6 +6181,21 @@ begin
   AddIdentifier(TPasIdentifierScope(TopScope),El.Name,El,pikSimple);
 end;
 
+procedure TPasResolver.AddResourceString(El: TPasResString);
+var
+  C: TClass;
+begin
+  {$IFDEF VerbosePasResolver}
+  writeln('TPasResolver.AddResourceString ',GetObjName(El));
+  {$ENDIF}
+  if not (TopScope is TPasIdentifierScope) then
+    RaiseInvalidScopeForElement(20171004092114,El);
+  C:=El.Parent.ClassType;
+  if not C.InheritsFrom(TPasSection) then
+    RaiseNotYetImplemented(20171004092518,El);
+  AddIdentifier(TPasIdentifierScope(TopScope),El.Name,El,pikSimple);
+end;
+
 procedure TPasResolver.AddEnumType(El: TPasEnumType);
 var
   CanonicalSet: TPasSetType;
@@ -6739,7 +6776,7 @@ begin
         if (LeftResolved.IdentEl=nil) or (LeftResolved.IdentEl is TPasType) then
           RaiseMsg(20170322101128,nIllegalQualifier,sIllegalQualifier,['is'],Bin);
         // left side is class-of variable
-        LeftTypeEl:=TPasClassOfType(LeftResolved.TypeEl).DestType;
+        LeftTypeEl:=ResolveAliasType(TPasClassOfType(LeftResolved.TypeEl).DestType);
         if RightResolved.IdentEl is TPasClassType then
           begin
           // e.g. if ImageClass is TFPMemoryImage then ;
@@ -6754,7 +6791,7 @@ begin
           begin
           // e.g. if ImageClassA is ImageClassB then ;
           // or   if ImageClassA is TFPImageClass then ;
-          RightTypeEl:=TPasClassOfType(RightResolved.TypeEl).DestType;
+          RightTypeEl:=ResolveAliasType(TPasClassOfType(RightResolved.TypeEl).DestType);
           if (CheckClassesAreRelated(LeftTypeEl,RightTypeEl,Bin)<>cIncompatible) then
             begin
             SetBaseType(btBoolean);
@@ -6975,7 +7012,7 @@ begin
       end
     else if TypeEl.ClassType=TPasClassOfType then
       begin
-      ClassScope:=TPasClassOfType(TypeEl).DestType.CustomData as TPasClassScope;
+      ClassScope:=ResolveAliasType(TPasClassOfType(TypeEl).DestType).CustomData as TPasClassScope;
       if ClassScope.DefaultProperty<>nil then
         ComputeIndexProperty(ClassScope.DefaultProperty)
       else
@@ -9383,6 +9420,8 @@ begin
   if (AClass=TPasVariable)
       or (AClass=TPasConst) then
     AddVariable(TPasVariable(El))
+  else if AClass=TPasResString then
+    AddResourceString(TPasResString(El))
   else if (AClass=TPasProperty) then
     AddProperty(TPasProperty(El))
   else if AClass=TPasArgument then
@@ -9435,7 +9474,7 @@ begin
   else if AClass.InheritsFrom(TPasExpr) then
     // resolved when finished
   else if AClass.InheritsFrom(TPasImplBlock) then
-    // resolved finished
+    // resolved when finished
   else
     RaiseNotYetImplemented(20160922163544,El);
 end;
@@ -9929,6 +9968,7 @@ begin
   stTypeSection: FinishTypeSection(El as TPasDeclarations);
   stTypeDef: FinishTypeDef(El as TPasType);
   stConstDef: FinishConstDef(El as TPasConst);
+  stResourceString: FinishResourcestring(El as TPasResString);
   stProcedure: FinishProcedure(El as TPasProcedure);
   stProcedureHeader: FinishProcedureType(El as TPasProcedureType);
   stExceptOnExpr: FinishExceptOnExpr;
@@ -11630,7 +11670,6 @@ function TPasResolver.CheckEqualResCompatibility(const LHS,
   RErrorEl: TPasElement): integer;
 var
   TypeEl: TPasType;
-  ok: Boolean;
 begin
   Result:=cIncompatible;
   if RErrorEl=nil then RErrorEl:=LErrorEl;
@@ -11640,35 +11679,31 @@ begin
   {$ENDIF}
   if not (rrfReadable in LHS.Flags) then
     begin
-    ok:=false;
     if (LHS.BaseType=btContext) and (LHS.TypeEl.ClassType=TPasClassType)
-        and (LHS.IdentEl=LHS.TypeEl) then
+        and (ResolveAliasTypeEl(LHS.IdentEl)=LHS.TypeEl) then
       begin
       if RHS.BaseType=btNil then
-        ok:=true
+        exit(cExact)
       else if (RHS.BaseType=btContext) and (RHS.TypeEl.ClassType=TPasClassOfType)
           and (rrfReadable in RHS.Flags) then
         // for example  if TImage=ImageClass then
-        ok:=true;
+        exit(cExact);
       end;
-    if not ok then
-      RaiseMsg(20170216152438,nNotReadable,sNotReadable,[],LErrorEl);
+    RaiseMsg(20170216152438,nNotReadable,sNotReadable,[],LErrorEl);
     end;
   if not (rrfReadable in RHS.Flags) then
     begin
-    ok:=false;
     if (RHS.BaseType=btContext) and (RHS.TypeEl.ClassType=TPasClassType)
-        and (RHS.IdentEl=RHS.TypeEl) then
+        and (ResolveAliasTypeEl(RHS.IdentEl)=RHS.TypeEl) then
       begin
       if LHS.BaseType=btNil then
-        ok:=true
+        exit(cExact)
       else if (LHS.BaseType=btContext) and (LHS.TypeEl.ClassType=TPasClassOfType)
           and (rrfReadable in LHS.Flags) then
         // for example  if ImageClass=TImage then
-        ok:=true;
+        exit(cExact);
       end;
-    if not ok then
-      RaiseMsg(20170216152440,nNotReadable,sNotReadable,[],RErrorEl);
+    RaiseMsg(20170216152440,nNotReadable,sNotReadable,[],RErrorEl);
     end;
 
   if (LHS.BaseType=btCustom) or (RHS.BaseType=btCustom) then
@@ -12190,7 +12225,9 @@ begin
         RaiseMsg(20170216152500,nIncompatibleTypesGotExpected,sIncompatibleTypesGotExpected,
           ['class of '+TPasClassOfType(RTypeEl).DestType.FullName,'class of '+TPasClassOfType(LTypeEl).DestType.FullName],ErrorEl);
       end
-    else if (RHS.IdentEl is TPasClassType) then
+    else if (RHS.IdentEl is TPasClassType)
+        or ((RHS.IdentEl is TPasAliasType)
+          and (ResolveAliasType(TPasAliasType(RHS.IdentEl)).ClassType=TPasClassType)) then
       begin
       // e.g. ImageClass:=TFPMemoryImage;
       Result:=CheckClassIsClass(RTypeEl,TPasClassOfType(LTypeEl).DestType,ErrorEl);
@@ -12621,7 +12658,8 @@ begin
     else if TypeB.IdentEl is TPasClassType then
       begin
       // for example: if ImageClass=TFPMemoryImage then
-      Result:=CheckClassIsClass(TPasClassType(TypeB.IdentEl),TPasClassOfType(ElA).DestType,ErrorEl);
+      Result:=CheckClassIsClass(TPasClassType(TypeB.IdentEl),
+                                TPasClassOfType(ElA).DestType,ErrorEl);
       if (Result=cIncompatible) and RaiseOnIncompatible then
         RaiseMsg(20170216152520,nTypesAreNotRelated,sTypesAreNotRelated,[],ErrorEl);
       exit;
@@ -13447,6 +13485,8 @@ begin
     if BaseTypes[btShortString]=nil then
       RaiseMsg(20170419203146,nIllegalQualifier,sIllegalQualifier,['['],El);
     end
+  else if ElClass=TPasResString then
+    SetResolverIdentifier(ResolvedEl,btString,El,nil,[rrfReadable])
   else
     RaiseNotYetImplemented(20160922163705,El);
 end;
@@ -13565,6 +13605,14 @@ begin
     else
       exit;
     end;
+end;
+
+function TPasResolver.ResolveAliasTypeEl(El: TPasElement): TPasType;
+begin
+  if (El is TPasType) then
+    Result:=ResolveAliasType(TPasType(El))
+  else
+    Result:=nil;
 end;
 
 function TPasResolver.ExprIsAddrTarget(El: TPasExpr): boolean;

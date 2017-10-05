@@ -1,5 +1,5 @@
 
-{ $Id: dbgrids.pas 55942 2017-09-29 11:57:30Z juha $}
+{ $Id: dbgrids.pas 55974 2017-10-04 22:43:27Z juha $}
 {
  /***************************************************************************
                                DBGrids.pas
@@ -2691,14 +2691,14 @@ begin
             if IsMouseOverCellButton(X, Y) then
               StartPushCell;
           end;
-          if ssCtrl in Shift then begin
-            // Don't unselect if Right-click for PopupMenu. Select an unselected row.
-            if (Button<>mbRight) or (PopupMenu=Nil) or not FSelectedRows.CurrentRowSelected then
-              ToggleSelectedRow;
-          end
+          if ssCtrl in Shift then
+            ToggleSelectedRow
           else begin
             if Button=mbLeft then
-              ClearSelection(true);
+              ClearSelection(true)
+            // Select row before popupmenu
+            else if (Button=mbRight) and Assigned(PopupMenu) and not FSelectedRows.CurrentRowSelected then
+              ToggleSelectedRow;
             doMoveToColumn;
           end;
         end;
