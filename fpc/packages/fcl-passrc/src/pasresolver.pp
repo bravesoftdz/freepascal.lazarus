@@ -1054,7 +1054,7 @@ type
     function EmitElementHints(PosEl, El: TPasElement): boolean; virtual;
     procedure ReplaceProcScopeImplArgsWithDeclArgs(ImplProcScope: TPasProcedureScope);
     procedure CheckConditionExpr(El: TPasExpr; const ResolvedEl: TPasResolverResult); virtual;
-    procedure CheckProcSignatureMatch(DeclProc, ImplProc: TPasProcedure);
+    procedure CheckProcSignatureMatch(DeclProc, ImplProc: TPasProcedure; CheckNames: boolean);
     procedure CheckPendingForwards(El: TPasElement);
     procedure ComputeBinaryExpr(Bin: TBinaryExpr;
       out ResolvedEl: TPasResolverResult; Flags: TPasResolverComputeFlags;
@@ -1253,6 +1253,7 @@ type
     function PushEnumDotScope(CurEnumType: TPasEnumType): TPasDotEnumTypeScope;
     procedure ResetSubScopes(out Depth: integer);
     procedure RestoreSubScopes(Depth: integer);
+    function GetInheritedExprScope(ErrorEl: TPasElement): TPasProcedureScope;
     // log and messages
     class procedure UnmangleSourceLineNumber(LineNumber: integer;
       out Line, Column: integer);
@@ -3481,6 +3482,8 @@ begin
     else
       RaiseXExpectedButYFound(20170216151609,'range',RangeResolved.IdentEl.ElementTypeName,Expr);
     end;
+  if El.ElType=nil then
+    RaiseNotYetImplemented(20171005235610,El,'array of const');
   FinishSubElementType(El,El.ElType);
 end;
 
@@ -3699,7 +3702,7 @@ begin
       if ProcNeedsImplProc(Proc) or (not ProcNeedsImplProc(DeclProc)) then
         RaiseMsg(20170216151652,nDuplicateIdentifier,sDuplicateIdentifier,
                  [ProcName,GetElementSourcePosStr(DeclProc)],Proc.ProcType);
-      CheckProcSignatureMatch(DeclProc,Proc);
+      CheckProcSignatureMatch(DeclProc,Proc,true);
       DeclProcScope:=DeclProc.CustomData as TPasProcedureScope;
       DeclProcScope.ImplProc:=Proc;
       ProcScope:=Proc.CustomData as TPasProcedureScope;
@@ -3779,7 +3782,7 @@ begin
         RaiseMsg(20170216151708,nNoMethodInAncestorToOverride,
           sNoMethodInAncestorToOverride,[GetProcTypeDescription(Proc.ProcType)],Proc.ProcType);
       // override a virtual method
-      CheckProcSignatureMatch(OverloadProc,Proc);
+      CheckProcSignatureMatch(OverloadProc,Proc,false);
       // check visibility
       if Proc.Visibility<>OverloadProc.Visibility then
         case Proc.Visibility of
@@ -3863,7 +3866,7 @@ begin
     RaiseMsg(20170216151722,nAbstractMethodsMustNotHaveImplementation,sAbstractMethodsMustNotHaveImplementation,[],ImplProc);
   if DeclProc.IsExternal then
     RaiseXExpectedButYFound(20170216151725,'method','external method',ImplProc);
-  CheckProcSignatureMatch(DeclProc,ImplProc);
+  CheckProcSignatureMatch(DeclProc,ImplProc,true);
   ImplProcScope.DeclarationProc:=DeclProc;
   DeclProcScope:=DeclProc.CustomData as TPasProcedureScope;
   DeclProcScope.ImplProc:=ImplProc;
@@ -4714,8 +4717,8 @@ begin
       [BaseTypeNames[btBoolean],BaseTypeNames[ResolvedEl.BaseType]],El);
 end;
 
-procedure TPasResolver.CheckProcSignatureMatch(DeclProc, ImplProc: TPasProcedure
-  );
+procedure TPasResolver.CheckProcSignatureMatch(DeclProc,
+  ImplProc: TPasProcedure; CheckNames: boolean);
 var
   i: Integer;
   DeclArgs, ImplArgs: TFPList;
@@ -4737,16 +4740,19 @@ begin
         [],DeclResult,ImplResult,ImplProc);
     end;
 
-  // check argument names
-  DeclArgs:=DeclProc.ProcType.Args;
-  ImplArgs:=ImplProc.ProcType.Args;
-  for i:=0 to DeclArgs.Count-1 do
+  if CheckNames then
     begin
-    DeclName:=TPasArgument(DeclArgs[i]).Name;
-    ImplName:=TPasArgument(ImplArgs[i]).Name;
-    if CompareText(DeclName,ImplName)<>0 then
-      RaiseMsg(20170216151738,nFunctionHeaderMismatchForwardVarName,
-        sFunctionHeaderMismatchForwardVarName,[DeclProc.Name,DeclName,ImplName],ImplProc);
+    // check argument names
+    DeclArgs:=DeclProc.ProcType.Args;
+    ImplArgs:=ImplProc.ProcType.Args;
+    for i:=0 to DeclArgs.Count-1 do
+      begin
+      DeclName:=TPasArgument(DeclArgs[i]).Name;
+      ImplName:=TPasArgument(ImplArgs[i]).Name;
+      if CompareText(DeclName,ImplName)<>0 then
+        RaiseMsg(20170216151738,nFunctionHeaderMismatchForwardVarName,
+          sFunctionHeaderMismatchForwardVarName,[DeclProc.Name,DeclName,ImplName],ImplProc);
+      end;
     end;
 end;
 
@@ -5301,8 +5307,7 @@ begin
     end;
 
   // 'inherited;' without expression
-  CheckTopScope(FScopeClass_Proc);
-  ProcScope:=TPasProcedureScope(TopScope);
+  ProcScope:=GetInheritedExprScope(El);
   SelfScope:=ProcScope.GetSelfScope;
   if SelfScope=nil then
     RaiseMsg(20170216152141,nInheritedOnlyWorksInMethods,sInheritedOnlyWorksInMethods,[],El);
@@ -5348,8 +5353,7 @@ begin
   writeln('TPasResolver.ResolveInheritedCall El=',GetTreeDbg(El));
   {$ENDIF}
 
-  CheckTopScope(FScopeClass_Proc);
-  ProcScope:=TPasProcedureScope(TopScope);
+  ProcScope:=GetInheritedExprScope(El);
   SelfScope:=ProcScope.GetSelfScope;
   if SelfScope=nil then
     RaiseMsg(20170216152148,nInheritedOnlyWorksInMethods,sInheritedOnlyWorksInMethods,[],El);
@@ -10468,6 +10472,23 @@ begin
     end;
 end;
 
+function TPasResolver.GetInheritedExprScope(ErrorEl: TPasElement
+  ): TPasProcedureScope;
+var
+  Scope: TPasScope;
+  i: Integer;
+begin
+  i:=ScopeCount;
+  repeat
+    dec(i);
+    if i<0 then
+      RaiseMsg(20171006001229,nIllegalExpression,sIllegalExpression,[],ErrorEl);
+    Scope:=Scopes[i];
+    if Scope is TPasProcedureScope then
+      exit(TPasProcedureScope(Scope));
+  until false;
+end;
+
 procedure TPasResolver.SetLastMsg(const id: int64; MsgType: TMessageType;
   MsgNumber: integer; const Fmt: String; Args: array of const;
   PosEl: TPasElement);
@@ -11175,6 +11196,8 @@ var
 begin
   if (LeftResolved.TypeEl<>nil) and (LeftResolved.TypeEl.ClassType=TPasArrayType) then
     exit; // arrays are checked by element, not by the whole value
+  if ResolveAliasType(LeftResolved.TypeEl) is TPasClassOfType then
+    exit; // class-of are checked only by type, not by value
   RValue:=Eval(RHS,[refAutoConst]);
   if RValue=nil then
     exit; // not a const expression

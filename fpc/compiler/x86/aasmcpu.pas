@@ -1844,7 +1844,7 @@ implementation
         end;
       end;
 
-    function process_ea_ref(const input:toper;var output:ea;rfield:longint):boolean;
+    function process_ea_ref_64_32(const input:toper;var output:ea;rfield:longint):boolean;
       var
         sym   : tasmsymbol;
         md,s  : byte;
@@ -1889,13 +1889,13 @@ implementation
            { 16 bit? }
 
            if ((ir<>NR_NO) and (isub in [R_SUBMMX,R_SUBMMY]) and
-               (br<>NR_NO) and (bsub=R_SUBADDR)
+               (br<>NR_NO) and (bsub=R_SUBQ)
               ) then
            begin
              // vector memory (AVX2) =>> ignore
            end
-           else if ((ir<>NR_NO) and (isub<>R_SUBADDR) and (isub<>R_SUBD)) or
-                   ((br<>NR_NO) and (bsub<>R_SUBADDR) and (bsub<>R_SUBD)) then
+           else if ((ir<>NR_NO) and (isub<>R_SUBQ) and (isub<>R_SUBD)) or
+                   ((br<>NR_NO) and (bsub<>R_SUBQ) and (bsub<>R_SUBD)) then
            begin
              message(asmw_e_16bit_32bit_not_supported);
            end;
@@ -2057,7 +2057,7 @@ implementation
 
 {$elseif defined(i386)}
 
-    function process_ea_ref(const input:toper;out output:ea;rfield:longint):boolean;
+    function process_ea_ref_32(const input:toper;out output:ea;rfield:longint):boolean;
       var
         sym   : tasmsymbol;
         md,s  : byte;
@@ -2094,13 +2094,13 @@ implementation
            { 16 bit address? }
 
            if ((ir<>NR_NO) and (isub in [R_SUBMMX,R_SUBMMY]) and
-               (br<>NR_NO) and (bsub=R_SUBADDR)
+               (br<>NR_NO) and (bsub=R_SUBD)
               ) then
            begin
              // vector memory (AVX2) =>> ignore
            end
-           else if ((ir<>NR_NO) and (isub<>R_SUBADDR)) or
-                   ((br<>NR_NO) and (bsub<>R_SUBADDR)) then
+           else if ((ir<>NR_NO) and (isub<>R_SUBD)) or
+                   ((br<>NR_NO) and (bsub<>R_SUBD)) then
              message(asmw_e_16bit_not_supported);
 {$ifdef OPTEA}
            { make single reg base }
@@ -2225,7 +2225,7 @@ implementation
           end;
       end;
 
-    function process_ea_ref(const input:toper;out output:ea;rfield:longint):boolean;
+    function process_ea_ref_16(const input:toper;out output:ea;rfield:longint):boolean;
       var
         sym   : tasmsymbol;
         md,s,rv  : byte;
@@ -2259,8 +2259,8 @@ implementation
           begin
             { 32 bit address? }
 
-            if ((ir<>NR_NO) and (isub<>R_SUBADDR)) or
-               ((br<>NR_NO) and (bsub<>R_SUBADDR)) then
+            if ((ir<>NR_NO) and (isub<>R_SUBW)) or
+               ((br<>NR_NO) and (bsub<>R_SUBW)) then
               message(asmw_e_32bit_not_supported);
             { scalefactor can only be 1 in 16-bit addresses }
             if (s<>1) and (ir<>NR_NO) then
@@ -2320,7 +2320,13 @@ implementation
         {No register, so memory reference.}
         if input.typ<>top_ref then
           internalerror(200409263);
-        result:=process_ea_ref(input,output,rfield);
+{$if defined(x86_64)}
+        result:=process_ea_ref_64_32(input,output,rfield);
+{$elseif defined(i386)}
+        result:=process_ea_ref_32(input,output,rfield);
+{$elseif defined(i8086)}
+        result:=process_ea_ref_16(input,output,rfield);
+{$endif}
       end;
 
     function taicpu.calcsize(p:PInsEntry):shortint;

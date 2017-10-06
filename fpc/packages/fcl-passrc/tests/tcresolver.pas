@@ -398,6 +398,7 @@ type
     Procedure TestClass_MethodOverrideFixCase;
     Procedure TestClass_MethodOverrideSameResultType;
     Procedure TestClass_MethodOverrideDiffResultTypeFail;
+    Procedure TestClass_MethodOverrideDiffVarName;
     Procedure TestClass_MethodOverloadAncestor;
     Procedure TestClass_MethodOverloadArrayOfTClass;
     Procedure TestClass_ConstructorOverride;
@@ -483,6 +484,7 @@ type
     Procedure TestClass_TypeCast;
     Procedure TestClassOf_AlwaysForward;
     Procedure TestClassOf_ClassOfBeforeClass_FuncResult;
+    Procedure TestClassOf_Const;
 
     // property
     Procedure TestProperty1;
@@ -573,6 +575,9 @@ type
     Procedure TestArray_ConstDynArrayWrite;
     Procedure TestArray_ConstOpenArrayWriteFail;
     Procedure TestArray_Static_Const;
+
+    // array of const
+    Procedure TestArrayOfConst;
 
     // static arrays
     Procedure TestArrayIntRange_OutOfRange;
@@ -5901,6 +5906,23 @@ begin
     nResultTypeMismatchExpectedButFound);
 end;
 
+procedure TTestResolver.TestClass_MethodOverrideDiffVarName;
+begin
+  StartProgram(false);
+  Add([
+  'type',
+  '  TObject = class',
+  '    procedure DoIt(aName: string); virtual; abstract;',
+  '  end;',
+  '  TCar = class',
+  '    procedure DoIt(aCaption: string); override;',
+  '  end;',
+  'procedure TCar.DoIt(aCaption: string); begin end;',
+  'begin'
+  ]);
+  ParseProgram;
+end;
+
 procedure TTestResolver.TestClass_MethodOverloadAncestor;
 begin
   StartProgram(false);
@@ -6171,6 +6193,8 @@ begin
   '  inherited;',
   '  inherited DoIt;',
   '  if inherited DoIt=14 then ;',
+  '  with Self do inherited;',
+  '  with Self do inherited DoIt;',
   'end;',
   'begin',
    '']);
@@ -7880,6 +7904,27 @@ begin
   ParseProgram;
 end;
 
+procedure TTestResolver.TestClassOf_Const;
+begin
+  StartProgram(false);
+  Add([
+  'type',
+  '  TObject = class',
+  '  end;',
+  '  TBird = TObject;',
+  '  TBirds = class of TBird;',
+  '  TEagles = TBirds;',
+  '  THawk = class(TBird);',
+  'const',
+  '  Hawk: TEagles = THawk;',
+  '  DefaultBirdClasses : Array [1..2] of TEagles = (',
+  '    TBird,',
+  '    THawk',
+  '  );',
+  'begin']);
+  ParseProgram;
+end;
+
 procedure TTestResolver.TestProperty1;
 begin
   StartProgram(false);
@@ -9335,6 +9380,16 @@ begin
   'begin']);
   ParseProgram;
   CheckResolverUnexpectedHints;
+end;
+
+procedure TTestResolver.TestArrayOfConst;
+begin
+  StartProgram(false);
+  Add([
+  'procedure DoIt(args: array of const);',
+  'begin end;',
+  'begin']);
+  CheckResolverException('not yet implemented: :TPasArrayType [20171005235610] array of const',nNotYetImplemented);
 end;
 
 procedure TTestResolver.TestArrayIntRange_OutOfRange;

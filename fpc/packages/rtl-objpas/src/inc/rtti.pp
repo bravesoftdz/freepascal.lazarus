@@ -163,8 +163,10 @@ type
   TRttiNamedObject = class(TRttiObject)
   protected
     function GetName: string; virtual;
+    function GetHandle: Pointer; virtual; abstract;
   public
     property Name: string read GetName;
+    property Handle: Pointer read GetHandle;
   end;
 
   { TRttiType }
@@ -178,6 +180,7 @@ type
   protected
     FTypeData: PTypeData;
     function GetName: string; override;
+    function GetHandle: Pointer; override;
     function GetIsInstance: boolean; virtual;
     function GetIsManaged: boolean; virtual;
     function GetIsOrdinal: boolean; virtual;
@@ -227,6 +230,12 @@ type
     property StringKind: TRttiStringKind read GetStringKind;
   end;
 
+  TRttiPointerType = class(TRttiType)
+  private
+    function GetReferredType: TRttiType;
+  public
+    property ReferredType: TRttiType read GetReferredType;
+  end;
 
   { TRttiInstanceType }
 
@@ -270,6 +279,7 @@ type
   protected
     function GetVisibility: TMemberVisibility; override;
     function GetName: string; override;
+    function GetHandle: Pointer; override;
   public
     constructor create(AParent: TRttiType; APropInfo: PPropInfo);
     function GetValue(Instance: pointer): TValue;
@@ -613,6 +623,13 @@ begin
     Result := false;
 end;
 
+{ TRttiPointerType }
+
+function TRttiPointerType.GetReferredType: TRttiType;
+begin
+  Result := GRttiPool.GetType(FTypeData^.RefType);
+end;
+
 { TRttiPool }
 
 function TRttiPool.GetTypes: specialize TArray<TRttiType>;
@@ -664,6 +681,7 @@ begin
           tkUString,
           tkWString : Result := TRttiStringType.Create(ATypeInfo);
           tkFloat   : Result := TRttiFloatType.Create(ATypeInfo);
+          tkPointer : Result := TRttiPointerType.Create(ATypeInfo);
         else
           Result := TRttiType.Create(ATypeInfo);
         end;
@@ -1616,6 +1634,11 @@ begin
   Result:=FPropInfo^.Name;
 end;
 
+function TRttiProperty.GetHandle: Pointer;
+begin
+  Result := FPropInfo;
+end;
+
 constructor TRttiProperty.create(AParent: TRttiType; APropInfo: PPropInfo);
 begin
   inherited create(AParent);
@@ -1819,6 +1842,11 @@ end;
 function TRttiType.GetName: string;
 begin
   Result:=FTypeInfo^.Name;
+end;
+
+function TRttiType.GetHandle: Pointer;
+begin
+  Result := FTypeInfo;
 end;
 
 constructor TRttiType.create(ATypeInfo: PTypeInfo);
