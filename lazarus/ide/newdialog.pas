@@ -361,7 +361,7 @@ end;
 
 procedure TNewOtherDialog.FormCreate(Sender: TObject);
 begin
-  IDEDialogLayoutList.ApplyLayout(Self, 750, 410, False);
+  IDEDialogLayoutList.ApplyLayout(Self, 750, 410);
 end;
 
 procedure TNewOtherDialog.SetupComponents;
@@ -435,7 +435,6 @@ begin
   FillProjectInheritableItemsList;
   CompFilterEdit.Visible := false;
   InheritableComponentsListView.Visible := false;
-  IDEDialogLayoutList.ApplyLayout(Self, 570, 400);
 
   Node:=FindItem(InputHistories.NewFileType);
   if Node=nil then
