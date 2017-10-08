@@ -339,7 +339,6 @@ function SourceFileMgr: TLazSourceFileManager;
 function CreateSrcEditPageName(const AnUnitName, AFilename: string;
   IgnoreEditor: TSourceEditor): string;
 procedure UpdateDefaultPasFileExt;
-function SplitSrcPath(const ASearchPath, ACurrentDir: string): string;
 
 // Wrappers for TFileOpener methods.
 // WindowIndex is WindowID
@@ -388,27 +387,6 @@ begin
   DefPasExt:=PascalExtension[EnvironmentOptions.PascalFileExtension];
   if LazProjectFileDescriptors<>nil then
     LazProjectFileDescriptors.DefaultPascalFileExt:=DefPasExt;
-end;
-
-function SplitSrcPath(const ASearchPath, ACurrentDir: string): string;
-// Splits a ";" separated list of search paths into a TStringList.
-//  Replace path "." with ACurrentDir.
-var
-  p: Integer;
-  Dir: String;
-begin
-  Result := '';
-  p := 1;
-  while p <= length(ASearchPath) do
-  begin
-    Dir := GetNextDirectoryInSearchPath(ASearchPath,p);
-    if Dir <> '' then
-    begin
-      if Dir = '.' then
-        Dir := ACurrentDir;
-      Result := Result + Dir + ';';
-    end;
-  end;
 end;
 
 // Wrappers for TFileOpener methods.
@@ -1217,30 +1195,25 @@ end;
 
 function TFileOpener.ResolvePossibleSymlink: TModalResult;
 // Check if symlink and ask user if the real file should be opened instead.
-// Note that compiler never resolves symlinks, so files in the compiler
-//  search path must not be resolved.
+// Compiler never resolves symlinks, files in compiler search path must not be resolved.
+// If there already is an editor with a "physical" target of a symlink, use it.
 var
-  Path, Target: String;  // Search path and target file for the symlink.
+  SPath, Target: String;  // Search path and target file for the symlink.
 begin
   Result := mrOK;
-  Assert(FileExistsCached(FFilename),'TFileOpener.ResolveSymlink: '+FFilename+' does not exist.');
-  // Include absolute Project1.Directory in the search path.
-  Path := SplitSrcPath(CodeToolBoss.GetCompleteSrcPathForDirectory(''), Project1.Directory);
-  if (SearchDirectoryInSearchPath(Path, ExtractFilePath(FFileName)) > 0)
-  or Assigned(SourceEditorManager.SourceEditorIntfWithFilename(FFileName))
-  then            // FileName found in search path or in editor -> all good.
-    Exit;
-  // File is not in project search path nor open in editor => check for a symlink.
+  if ofProjectLoading in FFlags then Exit; // Use the given name when project loads.
   Target := GetPhysicalFilenameCached(FFileName,false);
-  if Target <> FFilename then
-  begin           // A symlink
-    if (SearchDirectoryInSearchPath(Path, ExtractFilePath(Target)) > 0)
-    or Assigned(SourceEditorManager.SourceEditorIntfWithFilename(Target))
-    then          // Target found in search path or in editor -> use Target name.
-      FFileName := Target
-    else          // Neither filename nor target was found anywhere, ask user.
-      Result := ChooseSymlink(FFileName, Target);
-  end;
+  if Target = FFilename then Exit;  // Not a symlink, continue with FFilename.
+  // ToDo: Check if there is an editor with a symlink for this "physical" file.
+
+  SPath := CodeToolBoss.GetCompleteSrcPathForDirectory('');
+  // Check if "physical" target for a symlink is found in search path or in editor.
+  if (SearchDirectoryInSearchPath(SPath, ExtractFilePath(Target)) > 0)
+  or Assigned(SourceEditorManager.SourceEditorIntfWithFilename(Target))
+  then          // Target found -> use Target name.
+    FFileName := Target
+  else          // Not found anywhere, ask user.
+    Result := ChooseSymlink(FFileName, Target);
 end;
 
 function TFileOpener.OpenEditorFile(APageIndex, AWindowIndex: integer;

@@ -153,9 +153,11 @@ type
 
   { TRttiObject }
 
-  TRttiObject = class
+  TRttiObject = class abstract
+  protected
+    function GetHandle: Pointer; virtual; abstract;
   public
-
+    property Handle: Pointer read GetHandle;
   end;
 
   { TRttiNamedObject }
@@ -163,10 +165,8 @@ type
   TRttiNamedObject = class(TRttiObject)
   protected
     function GetName: string; virtual;
-    function GetHandle: Pointer; virtual; abstract;
   public
     property Name: string read GetName;
-    property Handle: Pointer read GetHandle;
   end;
 
   { TRttiType }
@@ -174,8 +174,6 @@ type
   TRttiType = class(TRttiNamedObject)
   private
     FTypeInfo: PTypeInfo;
-    FPropertiesResolved: boolean;
-    FProperties: specialize TArray<TRttiProperty>;
     function GetAsInstance: TRttiInstanceType;
   protected
     FTypeData: PTypeData;
@@ -191,9 +189,8 @@ type
     function GetBaseType: TRttiType; virtual;
   public
     constructor create(ATypeInfo : PTypeInfo);
-    function GetProperties: specialize TArray<TRttiProperty>;
+    function GetProperties: specialize TArray<TRttiProperty>; virtual;
     function GetProperty(const AName: string): TRttiProperty; virtual;
-    destructor destroy; override;
     property IsInstance: boolean read GetIsInstance;
     property isManaged: boolean read GetIsManaged;
     property IsOrdinal: boolean read GetIsOrdinal;
@@ -278,6 +275,8 @@ type
 
   TRttiInstanceType = class(TRttiStructuredType)
   private
+    FPropertiesResolved: Boolean;
+    FProperties: specialize TArray<TRttiProperty>;
     function GetDeclaringUnitName: string;
     function GetMetaClassType: TClass;
   protected
@@ -285,6 +284,7 @@ type
     function GetTypeSize: integer; override;
     function GetBaseType: TRttiType; override;
   public
+    function GetProperties: specialize TArray<TRttiProperty>; override;
     property MetaClassType: TClass read GetMetaClassType;
     property DeclaringUnitName: string read GetDeclaringUnitName;
   end;
@@ -354,18 +354,26 @@ resourcestring
 
 implementation
 
+uses
+  fgl;
+
 type
 
   { TRttiPool }
 
   TRttiPool = class
+  private type
+    TRttiObjectMap = specialize TFPGMap<Pointer, TRttiObject>;
   private
+    FObjectMap: TRttiObjectMap;
     FTypesList: specialize TArray<TRttiType>;
     FTypeCount: LongInt;
     FLock: TRTLCriticalSection;
   public
     function GetTypes: specialize TArray<TRttiType>;
     function GetType(ATypeInfo: PTypeInfo): TRttiType;
+    function GetByHandle(aHandle: Pointer): TRttiObject;
+    procedure AddObject(aObject: TRttiObject);
     constructor Create;
     destructor Destroy; override;
   end;
@@ -407,6 +415,8 @@ resourcestring
   SErrUnableToGetValueForType = 'Unable to get value for type %s';
   SErrUnableToSetValueForType = 'Unable to set value for type %s';
   SErrInvalidTypecast         = 'Invalid class typecast';
+  SErrRttiObjectNoHandle      = 'RTTI object instance has no valid handle property';
+  SErrRttiObjectAlreadyRegistered = 'A RTTI object with handle 0x%x is already registered';
 
 var
   PoolRefCount : integer;
@@ -650,6 +660,7 @@ end;
 function TRttiPool.GetType(ATypeInfo: PTypeInfo): TRttiType;
 var
   i: integer;
+  obj: TRttiObject;
 begin
   if not Assigned(ATypeInfo) then
     Exit(Nil);
@@ -658,14 +669,9 @@ begin
   try
 {$endif}
     Result := Nil;
-    for i := 0 to FTypeCount - 1 do
-      begin
-        if FTypesList[i].FTypeInfo = ATypeInfo then
-          begin
-            Result := FTypesList[i];
-            Break;
-          end;
-      end;
+    obj := GetByHandle(ATypeInfo);
+    if Assigned(obj) then
+      Result := obj as TRttiType;
     if not Assigned(Result) then
       begin
         if FTypeCount = Length(FTypesList) then
@@ -685,8 +691,55 @@ begin
           Result := TRttiType.Create(ATypeInfo);
         end;
         FTypesList[FTypeCount] := Result;
+        FObjectMap.Add(ATypeInfo, Result);
         Inc(FTypeCount);
       end;
+{$ifdef FPC_HAS_FEATURE_THREADING}
+  finally
+    LeaveCriticalsection(FLock);
+  end;
+{$endif}
+end;
+
+function TRttiPool.GetByHandle(aHandle: Pointer): TRttiObject;
+var
+  idx: LongInt;
+begin
+  if not Assigned(aHandle) then
+    Exit(Nil);
+{$ifdef FPC_HAS_FEATURE_THREADING}
+  EnterCriticalsection(FLock);
+  try
+{$endif}
+    idx := FObjectMap.IndexOf(aHandle);
+    if idx < 0 then
+      Result := Nil
+    else
+      Result := FObjectMap.Data[idx];
+{$ifdef FPC_HAS_FEATURE_THREADING}
+  finally
+    LeaveCriticalsection(FLock);
+  end;
+{$endif}
+end;
+
+procedure TRttiPool.AddObject(aObject: TRttiObject);
+var
+  idx: LongInt;
+begin
+  if not Assigned(aObject) then
+    Exit;
+  if not Assigned(aObject.Handle) then
+    raise EArgumentException.Create(SErrRttiObjectNoHandle);
+{$ifdef FPC_HAS_FEATURE_THREADING}
+  EnterCriticalsection(FLock);
+  try
+{$endif}
+    idx := FObjectMap.IndexOf(aObject.Handle);
+    if idx < 0 then
+      FObjectMap.Add(aObject.Handle, aObject)
+    else if FObjectMap.Data[idx] <> aObject then
+      raise EInvalidOpException.CreateFmt(SErrRttiObjectAlreadyRegistered, [aObject.Handle]);
 {$ifdef FPC_HAS_FEATURE_THREADING}
   finally
     LeaveCriticalsection(FLock);
@@ -700,14 +753,16 @@ begin
   InitCriticalSection(FLock);
 {$endif}
   SetLength(FTypesList, 32);
+  FObjectMap := TRttiObjectMap.Create;
 end;
 
 destructor TRttiPool.Destroy;
 var
   i: LongInt;
 begin
-  for i := 0 to length(FTypesList)-1 do
-    FTypesList[i].Free;
+  for i := 0 to FObjectMap.Count - 1 do
+    FObjectMap.Data[i].Free;
+  FObjectMap.Free;
 {$ifdef FPC_HAS_FEATURE_THREADING}
   DoneCriticalsection(FLock);
 {$endif}
@@ -1592,6 +1647,58 @@ begin
   Result:=sizeof(TObject);
 end;
 
+function TRttiInstanceType.GetProperties: specialize TArray<TRttiProperty>;
+var
+  TypeInfo: PTypeInfo;
+  TypeRttiType: TRttiType;
+  TD: PTypeData;
+  PPD: PPropData;
+  TP: PPropInfo;
+  Count: longint;
+  obj: TRttiObject;
+begin
+  if not FPropertiesResolved then
+    begin
+      TypeInfo := FTypeInfo;
+
+      // Get the total properties count
+      SetLength(FProperties,FTypeData^.PropCount);
+      TypeRttiType:= self;
+      repeat
+        TD:=GetTypeData(TypeInfo);
+
+        // published properties count for this object
+        // skip the attribute-info if available
+        PPD := PClassData(TD)^.PropertyTable;
+        Count:=PPD^.PropCount;
+        // Now point TP to first propinfo record.
+        TP:=PPropInfo(@PPD^.PropList);
+        While Count>0 do
+          begin
+            // Don't overwrite properties with the same name
+            if FProperties[TP^.NameIndex]=nil then begin
+              obj := GRttiPool.GetByHandle(TP);
+              if Assigned(obj) then
+                FProperties[TP^.NameIndex] := obj as TRttiProperty
+              else begin
+                FProperties[TP^.NameIndex] := TRttiProperty.Create(TypeRttiType, TP);
+                GRttiPool.AddObject(FProperties[TP^.NameIndex]);
+              end;
+            end;
+
+            // Point to TP next propinfo record.
+            // Located at Name[Length(Name)+1] !
+            TP:=TP^.Next;
+            Dec(Count);
+          end;
+        TypeInfo:=TD^.Parentinfo;
+        TypeRttiType:= GRttiPool.GetType(TypeInfo);
+      until TypeInfo=nil;
+    end;
+
+  result := FProperties;
+end;
+
 { TRttiMember }
 
 function TRttiMember.GetVisibility: TMemberVisibility;
@@ -1856,76 +1963,9 @@ begin
     FTypeData:=GetTypeData(ATypeInfo);
 end;
 
-function aligntoptr(p : pointer) : pointer;inline;
-   begin
-{$ifdef FPC_REQUIRES_PROPER_ALIGNMENT}
-     result:=align(p,sizeof(p));
-{$else FPC_REQUIRES_PROPER_ALIGNMENT}
-     result:=p;
-{$endif FPC_REQUIRES_PROPER_ALIGNMENT}
-   end;
-
-function aligntoqword(p : pointer) : pointer;inline;
-  type
-    TAlignCheck = record
-      b : byte;
-      q : qword;
-    end;
-  begin
-{$ifdef FPC_REQUIRES_PROPER_ALIGNMENT}
-    result:=align(p,PtrInt(@TAlignCheck(nil^).q))
-{$else FPC_REQUIRES_PROPER_ALIGNMENT}
-    result:=p;
-{$endif FPC_REQUIRES_PROPER_ALIGNMENT}
-  end;
-
-
 function TRttiType.GetProperties: specialize TArray<TRttiProperty>;
-type
-  PPropData = ^TPropData;
-var
-  TypeInfo: PTypeInfo;
-  TypeRttiType: TRttiType;
-  TD: PTypeData;
-  PPD: PPropData;
-  TP: PPropInfo;
-  Count: longint;
 begin
-  if not FPropertiesResolved then
-    begin
-      TypeInfo := FTypeInfo;
-
-      // Get the total properties count
-      SetLength(FProperties,FTypeData^.PropCount);
-      // Clear list
-      FillChar(FProperties[0],FTypeData^.PropCount*sizeof(TRttiProperty),0);
-      TypeRttiType:= self;
-      repeat
-        TD:=GetTypeData(TypeInfo);
-
-        // published properties count for this object
-        // skip the attribute-info if available
-        PPD := aligntoptr(PPropData(pointer(@TD^.UnitName)+PByte(@TD^.UnitName)^+1));
-        Count:=PPD^.PropCount;
-        // Now point TP to first propinfo record.
-        TP:=PPropInfo(@PPD^.PropList);
-        While Count>0 do
-          begin
-            // Don't overwrite properties with the same name
-            if FProperties[TP^.NameIndex]=nil then
-              FProperties[TP^.NameIndex]:=TRttiProperty.Create(TypeRttiType, TP);
-
-            // Point to TP next propinfo record.
-            // Located at Name[Length(Name)+1] !
-            TP:=aligntoptr(PPropInfo(pointer(@TP^.Name)+PByte(@TP^.Name)^+1));
-            Dec(Count);
-          end;
-        TypeInfo:=TD^.Parentinfo;
-        TypeRttiType:= GRttiPool.GetType(TypeInfo);
-      until TypeInfo=nil;
-    end;
-
-  result := FProperties;
+  Result := Nil;
 end;
 
 function TRttiType.GetProperty(const AName: string): TRttiProperty;
@@ -1941,15 +1981,6 @@ begin
         result := FPropList[i];
         break;
       end;
-end;
-
-destructor TRttiType.Destroy;
-var
-  i: Integer;
-begin
-  for i := 0 to high(FProperties) do
-    FProperties[i].Free;
-  inherited destroy;
 end;
 
 { TRttiNamedObject }
