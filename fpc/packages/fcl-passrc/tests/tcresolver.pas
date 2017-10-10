@@ -239,6 +239,7 @@ type
     Procedure TestEnumSet_AnonymousEnumtypeName;
     Procedure TestEnumSet_Const;
     Procedure TestSet_IntRange_Const;
+    Procedure TestEnumRange; // ToDo
 
     // operators
     Procedure TestPrgAssignment;
@@ -485,6 +486,7 @@ type
     Procedure TestClassOf_AlwaysForward;
     Procedure TestClassOf_ClassOfBeforeClass_FuncResult;
     Procedure TestClassOf_Const;
+    Procedure TestClassOf_Const2;
 
     // property
     Procedure TestProperty1;
@@ -3076,12 +3078,40 @@ begin
   Add([
   'type',
   '  TIntRg = 2..6;',
-  '  TSevenSet = set of TIntRg;',
+  '  TFiveSet = set of TIntRg;',
   'const',
-  '  a: TSevenSet = [2..3,5]+[4];',
+  '  a: TFiveSet = [2..3,5]+[4];',
   '  b = low(TIntRg)+high(TIntRg);',
   'begin']);
   ParseProgram;
+  CheckResolverUnexpectedHints;
+end;
+
+procedure TTestResolver.TestEnumRange;
+begin
+  StartProgram(false);
+  Add([
+  'type',
+  '  TEnum = (a,b,c,d,e);',
+  '  TEnumRg = b..d;',
+  'const',
+  '  c1: TEnumRg = c;',
+  '  c2: TEnumRg = succ(low(TEnumRg));',
+  '  c3: TEnumRg = pred(high(TEnumRg));',
+  '  c4: TEnumRg = TEnumRg(2);',
+  'var',
+  '  er: TEnumRg;',
+  '  Enum: TEnum;',
+  'begin',
+  '  er:=d;',
+  '  Enum:=er;',
+  //'  if Enum=er then ;',
+  //'  if er=Enum then ;',
+  //'  if er=c then ;',
+  //'  if c=er then ;',
+  '']);
+  ParseProgram;
+  // see also: TestPropertyDefaultValue
   CheckResolverUnexpectedHints;
 end;
 
@@ -3901,15 +3931,23 @@ var
   Ref: TResolvedReference;
 begin
   StartProgram(false);
-  Add('type');
-  Add('  TObject = class');
-  Add('    constructor Create(Msg: string); external name ''ext'';');
-  Add('  end;');
-  Add('  Exception = class end;');
-  Add('  EConvertError = class(Exception) end;');
-  Add('begin');
-  Add('  raise Exception.{#a}Create(''foo'');');
-  Add('  raise EConvertError.{#b}Create(''bar'');');
+  Add([
+  'type',
+  '  TObject = class',
+  '    constructor Create(Msg: string); external name ''ext'';',
+  '  end;',
+  '  Exception = class end;',
+  '  EConvertError = class(Exception) end;',
+  'function AssertConv(Msg: string = ''msg''): EConvertError;',
+  'begin',
+  '  Result:=EConvertError.{#ass}Create(Msg);',
+  'end;',
+  'begin',
+  '  raise Exception.{#a}Create(''foo'');',
+  '  raise EConvertError.{#b}Create(''bar'');',
+  '  raise AssertConv(''c'');',
+  '  raise AssertConv;',
+  '']);
   ParseProgram;
   aMarker:=FirstSrcMarker;
   while aMarker<>nil do
@@ -7925,6 +7963,25 @@ begin
   ParseProgram;
 end;
 
+procedure TTestResolver.TestClassOf_Const2;
+begin
+  StartProgram(false);
+  Add([
+  'type',
+  '  TObject = class',
+  '  end;',
+  '  TFieldType = (fta,ftb);',
+  '  TField = Class;',
+  '  TFieldClass = class of TField;',
+  '  TField = Class(TObject);',
+  '  TFieldA = Class(TField);',
+  '  TFieldB = Class(TField);',
+  'Const',
+  '  DefaultFieldClasses : Array [TFieldType] of TFieldClass = (TFieldA,TFieldB);',
+  'begin']);
+  ParseProgram;
+end;
+
 procedure TTestResolver.TestProperty1;
 begin
   StartProgram(false);
@@ -8282,7 +8339,8 @@ begin
   StartProgram(false);
   Add([
   'type',
-  '  TEnum = (red, blue);',
+  '  TEnum = (red, blue, green, white, grey, black);',
+  '  TEnumRg = blue..grey;',
   '  TSet = set of TEnum;',
   'const',
   '  CB = true or false;',
@@ -8300,6 +8358,8 @@ begin
   '    FE: TEnum;',
   '    property E1: TEnum read FE default red;',
   '    property E2: TEnum read FE default TEnum.blue;',
+  //'    FEnumRg: TEnumRg;',
+  //'    property EnumRg1: TEnumRg read FEnumRg default white;',
   '    FSet: TSet;',
   '    property Set1: TSet read FSet default [];',
   '    property Set2: TSet read FSet default [red];',

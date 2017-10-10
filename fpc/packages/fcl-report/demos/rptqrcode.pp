@@ -1,4 +1,4 @@
-unit rptbarcode;
+unit rptQRCode;
 
 
 {$mode objfpc}{$H+}
@@ -11,7 +11,8 @@ uses
   SysUtils,
   fpreport,
   fpreportcontnr,
-  fpreportbarcode,
+  fpqrcodegen,
+  fpreportqrcode,
   contnrs,
   udapp;
 
@@ -30,14 +31,14 @@ type
 
   { TCollectionDemo }
 
-  { TBarcodeDemo }
+  { TQRCodeDemo }
 
-  TBarcodeDemo = class(TReportDemoApp)
+  TQRCodeDemo = class(TReportDemoApp)
   private
-    procedure SetBarcodeValue(Sender: TFPReportElement);
+    procedure SetQRCodeValue(Sender: TFPReportElement);
   Protected
     FReportData : TFPReportObjectData;
-    FBarcode: TFPReportBarcode;
+    FQRCode: TFPReportQRcode;
   public
     procedure   InitialiseData; override;
     constructor Create(AOWner :TComponent); override;
@@ -58,7 +59,7 @@ uses
   fpJSON,
   jsonparser;
 
-procedure TBarcodeDemo.CreateReportDesign;
+procedure TQRCodeDemo.CreateReportDesign;
 var
   p: TFPReportPage;
   TitleBand: TFPReportTitleBand;
@@ -66,11 +67,12 @@ var
   GroupHeader: TFPReportGroupHeaderBand;
   Memo: TFPReportMemo;
   PageFooter: TFPReportPageFooterBand;
-
+  QR : TFPReportQRcode;
+  
 begin
   Inherited;
   rpt.Author := 'Michael Van Canneyt';
-  rpt.Title := 'FPReport Demo : Barcodes';
+  rpt.Title := 'FPReport Demo : QR Codes';
 
   p :=  TFPReportPage.Create(rpt);
   p.Orientation := poPortrait;
@@ -97,6 +99,22 @@ begin
   Memo.Layout.Height := 10;
   Memo.Text := 'COUNTRY AND POPULATION AS OF 2014';
 
+  QR:= TFPReportQRcode.Create(TitleBand);
+  QR.Layout.Left := 1;
+  QR.Layout.Top := 1;
+  QR.Layout.Width := 34;
+  QR.Layout.Height := 34;
+  QR.Value:='https://www.nayuki.io/page/qr-code-generator-library/';
+  QR.Center:=True;
+
+  QR:= TFPReportQRcode.Create(TitleBand);
+  QR.Layout.Left := 115;
+  QR.Layout.Top := 1;
+  QR.Layout.Width := 34;
+  QR.Layout.Height := 34;
+  QR.Value:='https://freepascal.org/';
+  QR.Center:=True;
+
   GroupHeader := TFPReportGroupHeaderBand.Create(p);
   GroupHeader.Layout.Height := 15;
   GroupHeader.GroupCondition := 'copy(''[Name]'',1,1)';
@@ -115,7 +133,7 @@ begin
   Memo.Font.Size := 16;
 
   DataBand := TFPReportDataBand.Create(p);
-  DataBand.Layout.Height := 8;
+  DataBand.Layout.Height := 35;
   {$ifdef ColorBands}
   DataBand.Frame.Shape := fsRectangle;
   DataBand.Frame.BackgroundColor := clDataBand;
@@ -125,7 +143,7 @@ begin
   Memo.Layout.Left := 15;
   Memo.Layout.Top := 1;
   Memo.Layout.Width := 50;
-  Memo.Layout.Height := 5;
+  Memo.Layout.Height := 20;
   Memo.Text := '[Name]';
 
   Memo := TFPReportMemo.Create(DataBand);
@@ -135,15 +153,15 @@ begin
   Memo.Layout.Height := 5;
   Memo.Text := '[formatfloat(''#,##0'', Population)]';
 
-  FBarcode := TFPReportBarcode.Create(DataBand);
-  FBarcode.Layout.Left := 100;
-  FBarcode.Layout.Top := 1;
-  FBarcode.Layout.Width := 50;
-  FBarcode.Layout.Height := 5;
-  FBarCode.PadLength:=12;
+  FQRCode := TFPReportQRCode.Create(DataBand);
+  FQRCode.Layout.Left := 100;
+  FQRCode.Layout.Top := 1;
+  FQRCode.Layout.Width := 32;
+  FQRCode.Layout.Height := 32;
+  FQRCode.Center:=True;
   // Only one of the 2 ways must be used: either set expression, either use callback.
-  FBarcode.Expression:='Population';
-  // Databand.OnBeforePrint:=@SetBarcodeValue;
+  FQRCode.Expression:='''http://en.wikipedia.org/wiki/''+Name';
+  // Databand.OnBeforePrint:=@SetQRCodeValue;
 
 
   PageFooter := TFPReportPageFooterBand.Create(p);
@@ -163,7 +181,7 @@ begin
   Memo.TextAlignment.Horizontal := taRightJustified;
 end;
 
-procedure TBarcodeDemo.LoadDesignFromFile(const AFilename: string);
+procedure TQRCodeDemo.LoadDesignFromFile(const AFilename: string);
 var
   rs: TFPReportJSONStreamer;
   fs: TFileStream;
@@ -188,7 +206,7 @@ begin
   end;
 end;
 
-procedure TBarcodeDemo.HookupData(const AComponentName: string; const AData: TFPReportData);
+procedure TQRCodeDemo.HookupData(const AComponentName: string; const AData: TFPReportData);
 var
   b: TFPReportCustomBandWithData;
 begin
@@ -197,35 +215,35 @@ begin
     b.Data := AData;
 end;
 
-destructor TBarcodeDemo.Destroy;
+destructor TQRCodeDemo.Destroy;
 begin
   FreeAndNil(FReportData);
   inherited Destroy;
 end;
 
-constructor TBarcodeDemo.Create(AOWner: TComponent);
+constructor TQRCodeDemo.Create(AOWner: TComponent);
 begin
   inherited;
   FReportData := TFPReportCollectionData.Create(nil);
   TFPReportCollectionData(FReportData).OwnsCollection:=True;
 end;
 
-class function TBarcodeDemo.Description: string;
+class function TQRCodeDemo.Description: string;
 begin
-  Result:='Demo showing native support for barcodes';
+  Result:='Demo showing native support for QRCodes';
 end;
 
-{ TBarcodeDemo }
+{ TQRCodeDemo }
 
-procedure TBarcodeDemo.SetBarcodeValue(Sender: TFPReportElement);
+procedure TQRCodeDemo.SetQRcodeValue(Sender: TFPReportElement);
 
 begin
-  FBarcode.Value:=FReportData.FieldValues['Population'];
+  FQRCode.Value:='http://en.wikipedia.org/wiki/'+FReportData.FieldValues['Name'];
 end;
 
-procedure TBarcodeDemo.InitialiseData;
+procedure TQRCodeDemo.InitialiseData;
 
-Var
+var
   SL : TStringList;
   i : Integer;
   N,V : String;
