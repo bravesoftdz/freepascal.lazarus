@@ -315,6 +315,24 @@ uses
     { checks whether two segment registers are normally equal in the current memory model }
     function segment_regs_equal(r1,r2:tregister):boolean;
 
+    { checks whether the specified op is an x86 string instruction (e.g. cmpsb, movsd, scasw, etc.) }
+    function is_x86_string_op(op: TAsmOp): boolean;
+    { checks whether the specified op is an x86 parameterless string instruction
+      (e.g. returns true for movsb, cmpsw, etc, but returns false for movs, cmps, etc.) }
+    function is_x86_parameterless_string_op(op: TAsmOp): boolean;
+    { checks whether the specified op is an x86 parameterized string instruction
+      (e.g. returns true for movs, cmps, etc, but returns false for movsb, cmpsb, etc.) }
+    function is_x86_parameterized_string_op(op: TAsmOp): boolean;
+    function x86_parameterized_string_op_param_count(op: TAsmOp): shortint;
+    function x86_param2paramless_string_op(op: TAsmOp): TAsmOp;
+    function get_x86_string_op_size(op: TAsmOp): TOpSize;
+    { returns the 0-based operand number (intel syntax) of the ds:[si] param of
+      a x86 string instruction }
+    function get_x86_string_op_si_param(op: TAsmOp):shortint;
+    { returns the 0-based operand number (intel syntax) of the es:[di] param of
+      a x86 string instruction }
+    function get_x86_string_op_di_param(op: TAsmOp):shortint;
+
 {$ifdef i8086}
     { return whether we need to add an extra FWAIT instruction before the given
       instruction, when we're targeting the i8087. This includes almost all x87
@@ -636,6 +654,151 @@ implementation
         { the remaining are distinct from each other }
         exit(false);
 {$endif}
+      end;
+
+
+    function is_x86_string_op(op: TAsmOp): boolean;
+      begin
+        case op of
+{$ifdef x86_64}
+          A_MOVSQ,
+          A_CMPSQ,
+          A_SCASQ,
+          A_LODSQ,
+          A_STOSQ,
+{$endif x86_64}
+          A_MOVSB,A_MOVSW,A_MOVSD,
+          A_CMPSB,A_CMPSW,A_CMPSD,
+          A_SCASB,A_SCASW,A_SCASD,
+          A_LODSB,A_LODSW,A_LODSD,
+          A_STOSB,A_STOSW,A_STOSD,
+          A_INSB, A_INSW, A_INSD,
+          A_OUTSB,A_OUTSW,A_OUTSD,
+          A_MOVS,A_CMPS,A_SCAS,A_LODS,A_STOS,A_INS,A_OUTS:
+            result:=true;
+          else
+            result:=false;
+        end;
+      end;
+
+
+    function is_x86_parameterless_string_op(op: TAsmOp): boolean;
+      begin
+        case op of
+{$ifdef x86_64}
+          A_MOVSQ,
+          A_CMPSQ,
+          A_SCASQ,
+          A_LODSQ,
+          A_STOSQ,
+{$endif x86_64}
+          A_MOVSB,A_MOVSW,A_MOVSD,
+          A_CMPSB,A_CMPSW,A_CMPSD,
+          A_SCASB,A_SCASW,A_SCASD,
+          A_LODSB,A_LODSW,A_LODSD,
+          A_STOSB,A_STOSW,A_STOSD,
+          A_INSB, A_INSW, A_INSD,
+          A_OUTSB,A_OUTSW,A_OUTSD:
+            result:=true;
+          else
+            result:=false;
+        end;
+      end;
+
+
+    function is_x86_parameterized_string_op(op: TAsmOp): boolean;
+      begin
+        case op of
+          A_MOVS,A_CMPS,A_SCAS,A_LODS,A_STOS,A_INS,A_OUTS:
+            result:=true;
+          else
+            result:=false;
+        end;
+      end;
+
+
+    function x86_parameterized_string_op_param_count(op: TAsmOp): shortint;
+      begin
+        case op of
+          A_MOVS,A_CMPS,A_INS,A_OUTS:
+            result:=2;
+          A_SCAS,A_LODS,A_STOS:
+            result:=1;
+          else
+            internalerror(2017101203);
+        end;
+      end;
+
+
+    function x86_param2paramless_string_op(op: TAsmOp): TAsmOp;
+      begin
+        case op of
+          A_MOVSB,A_MOVSW,A_MOVSD{$ifdef x86_64},A_MOVSQ{$endif}:
+            result:=A_MOVS;
+          A_CMPSB,A_CMPSW,A_CMPSD{$ifdef x86_64},A_CMPSQ{$endif}:
+            result:=A_CMPS;
+          A_SCASB,A_SCASW,A_SCASD{$ifdef x86_64},A_SCASQ{$endif}:
+            result:=A_SCAS;
+          A_LODSB,A_LODSW,A_LODSD{$ifdef x86_64},A_LODSQ{$endif}:
+            result:=A_LODS;
+          A_STOSB,A_STOSW,A_STOSD{$ifdef x86_64},A_STOSQ{$endif}:
+            result:=A_STOS;
+          A_INSB, A_INSW, A_INSD:
+            result:=A_INS;
+          A_OUTSB,A_OUTSW,A_OUTSD:
+            result:=A_OUTS;
+          else
+            internalerror(2017101201);
+        end;
+      end;
+
+
+    function get_x86_string_op_size(op: TAsmOp): TOpSize;
+      begin
+        case op of
+          A_MOVSB,A_CMPSB,A_SCASB,A_LODSB,A_STOSB,A_INSB,A_OUTSB:
+            result:=S_B;
+          A_MOVSW,A_CMPSW,A_SCASW,A_LODSW,A_STOSW,A_INSW,A_OUTSW:
+            result:=S_W;
+          A_MOVSD,A_CMPSD,A_SCASD,A_LODSD,A_STOSD,A_INSD,A_OUTSD:
+            result:=S_L;
+{$ifdef x86_64}
+          A_MOVSQ,A_CMPSQ,A_SCASQ,A_LODSQ,A_STOSQ:
+            result:=S_Q;
+{$endif x86_64}
+          else
+            internalerror(2017101202);
+        end;
+      end;
+
+
+    function get_x86_string_op_si_param(op: TAsmOp):shortint;
+      begin
+        case op of
+          A_MOVS,A_OUTS:
+            result:=1;
+          A_CMPS,A_LODS:
+            result:=0;
+          A_SCAS,A_STOS,A_INS:
+            result:=-1;
+          else
+            internalerror(2017101102);
+        end;
+      end;
+
+
+    function get_x86_string_op_di_param(op: TAsmOp):shortint;
+      begin
+        case op of
+          A_MOVS,A_SCAS,A_STOS,A_INS:
+            result:=0;
+          A_CMPS:
+            result:=1;
+          A_LODS,A_OUTS:
+            result:=-1;
+          else
+            internalerror(2017101202);
+        end;
       end;
 
 

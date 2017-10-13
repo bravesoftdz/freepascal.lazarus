@@ -986,25 +986,10 @@ interface
                     end;
                if fixed_opcode=A_FWAIT then
                 writer.AsmWriteln(#9#9'DB'#9'09bh')
-               else if (fixed_opcode=A_MOVS) or
-                       (fixed_opcode=A_CMPS) or
-                       (fixed_opcode=A_SCAS) or
-                       (fixed_opcode=A_LODS) or
-                       (fixed_opcode=A_STOS) or
-                       (fixed_opcode=A_INS) or
-                       (fixed_opcode=A_OUTS) then
+               else if is_x86_parameterized_string_op(fixed_opcode) then
                 begin
                   writer.AsmWrite(#9#9);
-                  case fixed_opcode of
-                    A_MOVS,A_OUTS:
-                      i:=1;
-                    A_CMPS,A_LODS:
-                      i:=0;
-                    A_SCAS,A_STOS,A_INS:
-                      i:=-1;
-                    else
-                      internalerror(2017101102);
-                  end;
+                  i:=get_x86_string_op_si_param(fixed_opcode);
                   if (i<>-1) and (taicpu(hp).oper[i]^.typ=top_ref) and
                      (taicpu(hp).oper[i]^.ref^.segment<>NR_NO) then
                     writer.AsmWrite(std_regname(taicpu(hp).oper[i]^.ref^.segment)+' ');
