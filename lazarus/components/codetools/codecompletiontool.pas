@@ -1754,10 +1754,11 @@ begin
   try
     // gather all proc definitions
     StartNode:=nil;
-    if (ProcNode.Parent.Desc=ctnImplementation)
-    and (ProcNode.Parent.PriorBrother<>nil)
-    and (ProcNode.Parent.PriorBrother.Desc=ctnInterface) then
-      StartNode:=ProcNode.Parent.PriorBrother.FirstChild;
+    if (ProcNode.Parent.Desc=ctnImplementation) then begin
+      StartNode:=FindInterfaceNode;
+      if StartNode<>nil then
+        StartNode:=StartNode.FirstChild;
+    end;
     if StartNode=nil then
       StartNode:=FindFirstNodeOnSameLvl(ProcNode);
     //debugln(['TCodeCompletionCodeTool.CompleteForwardProcs StartNode=',StartNode.DescAsString,' at ',CleanPosToStr(StartNode.StartPos),'=',ExtractProcName(StartNode,[])]);
@@ -9500,12 +9501,12 @@ function TCodeCompletionCodeTool.CompleteCode(CursorPos: TCodeXYPosition;
   var
     OldCodePos: TCodePosition;
   begin
-    // Search only within the current instruction - stop on semicolon or keywords
+    // Search only within the current statement - stop on semicolon or keywords
     //   (else isn't prepended by a semicolon in contrast to other keywords).
 
     Result := False;
-    MoveCursorToCleanPos(CleanCursorPos);
-    while CurPos.StartPos > 0 do
+    MoveCursorToNearestAtom(CleanCursorPos);
+    while CurPos.StartPos > 1 do
     begin
       ReadPriorAtom;
       case CurPos.Flag of
