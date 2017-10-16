@@ -565,6 +565,7 @@ type
     Procedure TestArray_OpenArrayOfString;
     Procedure TestArray_OpenArrayOfString_IntFail;
     Procedure TestArray_OpenArrayOverride;
+    Procedure TestArray_OpenArrayAsDynArraySetLengthFail;
     Procedure TestArray_CopyConcat;
     Procedure TestStaticArray_CopyConcat;// ToDo
     Procedure TestArray_CopyMismatchFail;
@@ -9201,17 +9202,20 @@ end;
 procedure TTestResolver.TestArray_OpenArrayOfString;
 begin
   StartProgram(false);
-  Add('procedure DoIt(const a: array of String);');
-  Add('var');
-  Add('  i: longint;');
-  Add('  s: string;');
-  Add('begin');
-  Add('  for i:=low(a) to high(a) do s:=a[length(a)-i-1];');
-  Add('end;');
-  Add('var s: string;');
-  Add('begin');
-  Add('  DoIt([]);');
-  Add('  DoIt([s,''foo'','''',s+s]);');
+  Add([
+  'procedure DoIt(const a: array of String);',
+  'var',
+  '  i: longint;',
+  '  s: string;',
+  'begin',
+  '  for i:=low(a) to high(a) do s:=a[length(a)-i-1];',
+  'end;',
+  'const arr: array[0..1] of string = (''A'', ''B'');',
+  'var s: string;',
+  'begin',
+  '  DoIt([]);',
+  '  DoIt([s,''foo'','''',s+s]);',
+  '  DoIt(arr);']);
   ParseProgram;
 end;
 
@@ -9246,6 +9250,20 @@ begin
   Add('end;');
   Add('begin');
   ParseProgram;
+end;
+
+procedure TTestResolver.TestArray_OpenArrayAsDynArraySetLengthFail;
+begin
+  ResolverEngine.Options:=ResolverEngine.Options+[proOpenAsDynArrays];
+  StartProgram(false);
+  Add([
+  'procedure DoIt(a: array of byte);',
+  'begin',
+  '  SetLength(a,3);',
+  'end;',
+  'begin']);
+  CheckResolverException('Incompatible type arg no. 1: Got "array of Byte", expected "string or dynamic array variable"',
+    nIncompatibleTypeArgNo);
 end;
 
 procedure TTestResolver.TestArray_CopyConcat;

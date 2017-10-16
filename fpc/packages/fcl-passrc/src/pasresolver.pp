@@ -153,12 +153,20 @@ Works:
   - a:=value
   - arr[index]
 - resourcestrings
+- custom ranges
+  - enum: low(), high(), pred(), succ()
 
 ToDo:
+- custom ranges
+  - enum: ord(), rg(int), int(rg), enum:=rg, rg:=enum, rg:=rg,
+     rgbig:=rgsmall, rgsmall:=rgbig
+     enum=rg, rg=enum, rg=rg, rg1=rg2
+     array[rg], low(array), high(array)
 - range checking:
   - indexedprop[param]
   - case-of unique
   - defaultvalue
+- $writableconst off $J-
 - fail to write a loop var inside the loop
 - warn: create class with abstract methods
 - classes - TPasClassType
@@ -878,7 +886,7 @@ type
 
   TPasResolverOption = (
     proFixCaseOfOverrides,  // fix Name of overriding proc/property to the overriden proc/property
-    proClassPropertyNonStatic,  // class property accessor must be non static
+    proClassPropertyNonStatic,  // class property accessors are non static
     proPropertyAsVarParam, // allows to pass a property as a var/out argument
     proClassOfIs, // class-of supports is and as operator
     proExtClassInstanceNoTypeMembers, // class members of external class cannot be accessed by instance
@@ -1371,7 +1379,7 @@ type
     function GetNewInstanceExpr(El: TPasExpr): TPasExpr;
     function ParentNeedsExprResult(El: TPasExpr): boolean;
     function GetReference_NewInstanceClass(Ref: TResolvedReference): TPasClassType;
-    function IsDynArray(TypeEl: TPasType): boolean;
+    function IsDynArray(TypeEl: TPasType; OptionalOpenArray: boolean = true): boolean;
     function IsOpenArray(TypeEl: TPasType): boolean;
     function IsDynOrOpenArray(TypeEl: TPasType): boolean;
     function IsVarInit(Expr: TPasExpr): boolean;
@@ -6005,7 +6013,7 @@ end;
 procedure TPasResolver.AccessExpr(Expr: TPasExpr;
   Access: TResolvedRefAccess);
 // called after a call target was found, called for each element
-// to set the rraParamToUnknownProc to Access
+// to change the rraParamToUnknownProc value to Access
 var
   Ref: TResolvedReference;
   Bin: TBinaryExpr;
@@ -6038,8 +6046,11 @@ begin
     pekArrayParams:
       begin
       ComputeElement(Params.Value,ValueResolved,[]);
-      if not IsDynArray(ValueResolved.TypeEl) then
+      if IsDynArray(ValueResolved.TypeEl,false) then
+        // an element of a dynamic array is independ of the array variable
+      else
         AccessExpr(Params.Value,Access);
+      // Note: an element of an open or static array or a string is connected to the variable
       end;
     pekSet:
       if Access<>rraRead then
@@ -7470,7 +7481,7 @@ begin
         end
       else if RBT=btContext then
        begin
-       C:=RHS.TypeEl.ClassType;
+       C:=ResolveAliasType(RHS.TypeEl).ClassType;
        if (C=TPasClassType)
            or (C=TPasClassOfType)
            or (C=TPasPointerType)
@@ -8243,7 +8254,7 @@ begin
       Result:=cExact
     else if ParamResolved.BaseType=btContext then
       begin
-      if IsDynArray(ParamResolved.TypeEl) then
+      if IsDynArray(ParamResolved.TypeEl,false) then
         begin
         Result:=cExact;
         DynArr:=NoNil(ParamResolved.TypeEl) as TPasArrayType;
@@ -12124,7 +12135,7 @@ function TPasResolver.GetTypeDescription(aType: TPasType; AddPath: boolean): str
       begin
       s:=aType.FullPath;
       if (s<>'') and (s<>'.') then
-        Result:=s+'.'+Result;
+        Result:=s+':'+Result;
       end;
   end;
 
@@ -12133,17 +12144,13 @@ var
 begin
   if aType=nil then exit('untyped');
   C:=aType.ClassType;
+  Result:=GetName;
   if (C=TPasUnresolvedSymbolRef) then
     begin
-    Result:=GetName;
     if TPasUnresolvedSymbolRef(aType).CustomData is TResElDataBuiltInProc then
       Result:=Result+'()';
     exit;
-    end
-  else if (C=TPasUnresolvedTypeRef) then
-    Result:=GetName
-  else
-    Result:=GetName;
+    end;
 end;
 
 function TPasResolver.GetTypeDescription(const R: TPasResolverResult;
@@ -12360,8 +12367,8 @@ begin
     RaiseInternalError(20160922163645);
   if (LHS.TypeEl=nil) then
     RaiseInternalError(20160922163648);
-  LTypeEl:=LHS.TypeEl;
-  RTypeEl:=RHS.TypeEl;
+  LTypeEl:=ResolveAliasType(LHS.TypeEl);
+  RTypeEl:=ResolveAliasType(RHS.TypeEl);
   if LTypeEl=RTypeEl then
     exit(cExact);
 
@@ -12436,7 +12443,9 @@ begin
       begin
       LArray:=TPasArrayType(LTypeEl);
       RArray:=TPasArrayType(RTypeEl);
-      if length(LArray.Ranges)=length(RArray.Ranges) then
+      if (length(RArray.Ranges)=1)
+          or ((proOpenAsDynArrays in Options) and (length(RArray.Ranges)=0))
+          or IsOpenArray(RTypeEl) then
         begin
         if CheckProcArgTypeCompatibility(LArray.ElType,RArray.ElType) then
           Result:=cExact
@@ -13904,12 +13913,14 @@ begin
   Result:=(Ref.Context as TResolvedRefCtxConstructor).Typ as TPasClassType;
 end;
 
-function TPasResolver.IsDynArray(TypeEl: TPasType): boolean;
+function TPasResolver.IsDynArray(TypeEl: TPasType; OptionalOpenArray: boolean
+  ): boolean;
 begin
+  TypeEl:=ResolveAliasType(TypeEl);
   if (TypeEl=nil) or (TypeEl.ClassType<>TPasArrayType)
       or (length(TPasArrayType(TypeEl).Ranges)<>0) then
     exit(false);
-  if proOpenAsDynArrays in Options then
+  if OptionalOpenArray and (proOpenAsDynArrays in Options) then
     Result:=true
   else
     Result:=(TypeEl.Parent=nil) or (TypeEl.Parent.ClassType<>TPasArgument);
@@ -13926,6 +13937,7 @@ end;
 
 function TPasResolver.IsDynOrOpenArray(TypeEl: TPasType): boolean;
 begin
+  TypeEl:=ResolveAliasType(TypeEl);
   Result:=(TypeEl<>nil) and (TypeEl.ClassType=TPasArrayType)
       and (length(TPasArrayType(TypeEl).Ranges)=0);
 end;
