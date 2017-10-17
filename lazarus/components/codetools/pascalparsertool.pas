@@ -717,7 +717,7 @@ begin
               break;
           until false;
           if CurNode.Desc=ctnSrcName then begin
-            CurNode.EndPos:=CurPos.StartPos;
+            CurNode.EndPos:=CurPos.EndPos;
             EndChildNode;
           end;
           if CurSection in [ctnProgram,ctnLibrary,ctnPackage] then
@@ -1401,9 +1401,8 @@ begin
       ExtractNextAtom(not (phpWithoutBrackets in Attr),Attr);
       if (CurPos.Flag in [cafRoundBracketClose,cafEdgedBracketClose])
       and (Src[CurPos.StartPos] = CloseBracket)
-      then begin
-        // opening bracket was not streamed, keep ExtractMemStream intact.
-        ReadNextAtom;
+      then begin             // empty brackets: extract also the closing bracket.
+        ExtractNextAtom(not (phpWithoutBrackets in Attr),Attr);
         exit(true);
       end;
     end;

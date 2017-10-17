@@ -2442,7 +2442,7 @@ var
   i: Integer;
   AForm: TCustomForm;
 begin
-  for i:=0 to Screen.CustomFormCount-1 do begin
+  for i:=Screen.CustomFormCount-1 downto 0 do begin
     AForm:=Screen.CustomForms[i];
     if AForm=MainIDEBar then continue;
     if IsFormDesign(AForm) then continue;
@@ -6631,7 +6631,7 @@ begin
         ExtractFilePath(Project1.MainFilename),FPCVersion,FPCRelease,FPCPatch);
       if (FPCVersion=2) and (FPCRelease<4) then begin
         IDEMessageDialog(lisFPCTooOld,
-          lisTheProjectUsesTheNewFPCResourcesWhichRequiresAtLea,
+          lisTheProjectUsesFPCResourcesWhichRequireAtLeast,
           mtError,[mbCancel]);
         exit(mrCancel);
       end;
