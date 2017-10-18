@@ -1,11 +1,11 @@
-{ $Id: watchpropertydlg.pp 54031 2017-01-29 21:04:32Z joost $ }
+{ $Id: watchpropertydlg.pp 56100 2017-10-17 15:17:49Z mattias $ }
 {               ----------------------------------------------
                  watchproperydlg.pp  -  property editor for 
                                         watches
                 ----------------------------------------------
 
  @created(Fri Dec 14st WET 2001)
- @lastmod($Date: 2017-01-29 16:04:32 -0500 (Sun, 29 Jan 2017) $)
+ @lastmod($Date: 2017-10-17 11:17:49 -0400 (Tue, 17 Oct 2017) $)
  @author(Shane Miller)
  @author(Marc Weustink <marc@@dommelstein.net>)
 
@@ -39,7 +39,7 @@ unit WatchPropertyDlg;
 interface
 
 uses
-  Classes, sysutils, Forms, StdCtrls, Extctrls, ButtonPanel, LazarusIDEStrConsts,
+  Classes, SysUtils, Forms, StdCtrls, Extctrls, ButtonPanel, LazarusIDEStrConsts,
   IDEHelpIntf, DbgIntfDebuggerBase, Debugger, BaseDebugManager, DebuggerStrConst;
 
 type

@@ -65,7 +65,7 @@ type
     Splitter1: TSplitter;
     TV: TTreeView;
     procedure btnHelpClick(Sender: TObject);
-    procedure FormClose(Sender: TObject; var CloseAction: TCloseAction);
+    procedure FormClose(Sender: TObject; var {%H-}CloseAction: TCloseAction);
     procedure FormCreate(Sender: TObject);
     procedure FormDestroy(Sender: TObject);
     procedure lvToolbarDblClick(Sender: TObject);
@@ -94,6 +94,7 @@ type
     procedure RemoveCommand;
     procedure SetupCaptions;
     procedure LoadCategories;
+    procedure SortCategories(ACtgList: TStrings);
     procedure AddMenuItem(ParentNode: TTreeNode; CmdItem: TIDEButtonCommand);
     function RootNodeCaption(CmdItem: TIDEButtonCommand): string;
   public
@@ -395,22 +396,66 @@ var
   xCategory: TIDEToolButtonCategory;
   xCaption: string;
   Node: TTreeNode;
+  SortedCtgList: TStringList;
 begin
   TV.Items.BeginUpdate;
+  SortedCtgList := TStringList.Create;
   try
-    TV.Items.Clear;
+    SortedCtgList.OwnsObjects := False;
     for i := 0 to IDEToolButtonCategories.Count-1 do
     begin
       xCategory := IDEToolButtonCategories[i];
-      xCaption := xCategory.Description;
+      SortedCtgList.AddObject(xCategory.Description, xCategory);
+    end;
+    SortCategories(SortedCtgList);
+
+    TV.Items.Clear;
+    for i := 0 to SortedCtgList.Count-1 do
+    begin
+      xCaption := SortedCtgList[i];
+      xCategory := SortedCtgList.Objects[i] as TIDEToolButtonCategory;
       DeleteAmpersands(xCaption);
       Node := TV.Items.AddChild(nil, Format('%s', [xCaption]));
       for l := 0 to xCategory.ButtonCount-1 do
         AddMenuItem(Node, xCategory.Buttons[l]);
     end;
   finally
+    SortedCtgList.Free;
     TV.Items.EndUpdate;
   end;
+end;
+
+procedure TToolBarConfig.SortCategories(ACtgList: TStrings);
+var
+  NewIndex: Integer;
+
+  procedure MoveItem(s: String);
+  var
+    OldIndex: Integer;
+  begin
+    OldIndex := ACtgList.IndexOf(s);
+    if (OldIndex<0) or (NewIndex>=ACtgList.Count) then Exit;
+    ACtgList.Move(OldIndex, NewIndex);
+    Inc(NewIndex);
+  end;
+
+begin
+  NewIndex := 0;
+  MoveItem(srkmCatFileMenu);
+  MoveItem(srkmCatCmdCmd);
+  MoveItem(srkmCatSelection);
+  MoveItem(srkmCatMacroRecording);
+  MoveItem(srkmCatSearchReplace);
+  MoveItem(srkmCatMarker);
+  MoveItem(srkmCatViewMenu);
+  MoveItem(srkmCatCodeTools);
+  MoveItem(srkmCatEditing);
+  MoveItem(srkmCatProjectMenu);
+  MoveItem(srkmCatRunMenu);
+  MoveItem(srkmCatPackageMenu);
+  MoveItem(srkmCatToolMenu);
+  MoveItem(srkmCatSrcNoteBook);
+  MoveItem(srkmCarHelpMenu);
 end;
 
 procedure TToolBarConfig.AddMenuItem(ParentNode: TTreeNode; CmdItem: TIDEButtonCommand);
