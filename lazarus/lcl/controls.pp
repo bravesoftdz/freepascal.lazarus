@@ -1,4 +1,4 @@
-{  $Id: controls.pp 55890 2017-09-20 20:46:27Z michl $  }
+{  $Id: controls.pp 56122 2017-10-18 10:14:55Z juha $  }
 {
  /***************************************************************************
                                Controls.pp
@@ -3107,6 +3107,7 @@ const
 var
   IsMultiClick: boolean;
   TargetControl: TControl;
+  Button: Byte;
 begin
   Result := LM_NULL;
 
@@ -3159,10 +3160,16 @@ begin
   end;
   LastMouse.Down := AMouseDown;
 
-  if AMouseDown then
-    Result := MSGKINDDOWN[AButton][LastMouse.ClickCount]
+  // mouse buttons 4,5 share same messages
+  if AButton = 5 then
+    Button := 4
   else
-    Result := MSGKINDUP[AButton];
+    Button := AButton;
+
+  if AMouseDown then
+    Result := MSGKINDDOWN[Button][LastMouse.ClickCount]
+  else
+    Result := MSGKINDUP[Button];
 end;
 
 function GetKeyShiftState: TShiftState;
