@@ -746,6 +746,12 @@ function GetPropList(Instance: TObject; out PropList: PPropList): Integer;
 
 
 // Property information routines.
+Function IsReadableProp(PropInfo : PPropInfo) : Boolean;
+Function IsReadableProp(Instance: TObject; const PropName: string): Boolean;
+Function IsReadableProp(AClass: TClass; const PropName: string): Boolean;
+Function IsWriteableProp(PropInfo : PPropInfo) : Boolean;
+Function IsWriteableProp(Instance: TObject; const PropName: string): Boolean;
+Function IsWriteableProp(AClass: TClass; const PropName: string): Boolean;
 Function IsStoredProp(Instance: TObject;PropInfo : PPropInfo) : Boolean;
 Function IsStoredProp(Instance: TObject; const PropName: string): Boolean;
 Function IsPublishedProp(Instance: TObject; const PropName: string): Boolean;
@@ -1242,6 +1248,35 @@ begin
     Raise EPropertyError.CreateFmt(SErrPropertyNotFound, [PropName]);
 end;
 
+function IsReadableProp(PropInfo: PPropInfo): Boolean;
+begin
+  Result:=(((PropInfo^.PropProcs) and 3) in [ptField,ptStatic,ptVirtual]);
+end;
+
+function IsReadableProp(Instance: TObject; const PropName: string): Boolean;
+begin
+  Result:=IsReadableProp(FindPropInfo(Instance,PropName));
+end;
+
+function IsReadableProp(AClass: TClass; const PropName: string): Boolean;
+begin
+  Result:=IsReadableProp(FindPropInfo(AClass,PropName));
+end;
+
+function IsWriteableProp(PropInfo: PPropInfo): Boolean;
+begin
+  Result:=(((PropInfo^.PropProcs shr 2) and 3) in [ptField,ptStatic,ptVirtual]);
+end;
+
+function IsWriteableProp(Instance: TObject; const PropName: string): Boolean;
+begin
+  Result:=IsWriteableProp(FindPropInfo(Instance,PropName));
+end;
+
+function IsWriteableProp(AClass: TClass; const PropName: string): Boolean;
+begin
+  Result:=IsWriteableProp(FindPropInfo(AClass,PropName));
+end;
 
 Function IsStoredProp(Instance : TObject;PropInfo : PPropInfo) : Boolean;
 type
@@ -1403,6 +1438,7 @@ end;
   ---------------------------------------------------------------------}
 
 Function GetOrdProp(Instance : TObject;PropInfo : PPropInfo) : Int64;
+
 type
   TGetInt64ProcIndex=function(index:longint):Int64 of object;
   TGetInt64Proc=function():Int64 of object;
@@ -1425,6 +1461,7 @@ begin
   Signed := false;
   DataSize := 4;
   case TypeInfo^.Kind of
+// We keep this for backwards compatibility, but internally it is no longer used.
 {$ifdef cpu64}
     tkInterface,
     tkInterfaceRaw,
@@ -1506,10 +1543,14 @@ begin
           end;
         end;
       end;
+  else
+    raise EPropertyError.CreateFmt(SErrCannotReadProperty, [PropInfo^.Name]);
   end;
 end;
 
+
 Procedure SetOrdProp(Instance : TObject;PropInfo : PPropInfo;Value : Int64);
+
 type
   TSetInt64ProcIndex=procedure(index:longint;i:Int64) of object;
   TSetInt64Proc=procedure(i:Int64) of object;
@@ -1578,6 +1619,8 @@ begin
               TSetIntegerProc(AMethod)(Value);
           end;
       end;
+  else
+    raise EPropertyError.CreateFmt(SErrCannotWriteToProperty, [PropInfo^.Name]);
   end;
 end;
 
@@ -1688,6 +1731,73 @@ begin
 end;
 
 { ---------------------------------------------------------------------
+  Pointer properties - internal only
+  ---------------------------------------------------------------------}
+
+Function GetPointerProp(Instance: TObject; PropInfo : PPropInfo): Pointer;
+
+Type
+  TGetPointerProcIndex = function (index:longint): Pointer of object;
+  TGetPointerProc = function (): Pointer of object;
+
+var
+  AMethod : TMethod;
+
+begin
+  case (PropInfo^.PropProcs) and 3 of
+  ptField:
+    Result := PPointer(Pointer(Instance) + LongWord(PropInfo^.GetProc))^;
+  ptStatic,
+  ptVirtual:
+    begin
+      if (PropInfo^.PropProcs and 3)=ptStatic then
+        AMethod.Code:=PropInfo^.GetProc
+      else
+        AMethod.Code:=PCodePointer(Pointer(Instance.ClassType)+PtrUInt(PropInfo^.GetProc))^;
+      AMethod.Data:=Instance;
+      if ((PropInfo^.PropProcs shr 6) and 1)<>0 then
+        Result:=TGetPointerProcIndex(AMethod)(PropInfo^.Index)
+      else
+        Result:=TGetPointerProc(AMethod)();
+    end;
+  else
+    raise EPropertyError.CreateFmt(SErrCannotReadProperty, [PropInfo^.Name]);
+  end;
+end;
+
+Procedure SetPointerProp(Instance: TObject; PropInfo : PPropInfo;  Value: Pointer);
+
+type
+  TSetPointerProcIndex = procedure(index: longint; p: pointer) of object;
+  TSetPointerProc = procedure(p: pointer) of object;
+
+var
+  AMethod : TMethod;
+
+begin
+  case (PropInfo^.PropProcs shr 2) and 3 of
+    ptField:
+      PPointer(Pointer(Instance) + LongWord(PropInfo^.SetProc))^:=Value;
+    ptStatic,
+    ptVirtual:
+      begin
+        if ((PropInfo^.PropProcs shr 2) and 3)=ptStatic then
+          AMethod.Code:=PropInfo^.SetProc
+        else
+          AMethod.Code:=PCodePointer(Pointer(Instance.ClassType)+PtrUInt(PropInfo^.SetProc))^;
+        AMethod.Data:=Instance;
+        if ((PropInfo^.PropProcs shr 6) and 1)<>0 then
+          TSetPointerProcIndex(AMethod)(PropInfo^.Index,Value)
+        else
+          TSetPointerProc(AMethod)(Value);
+      end;
+  else
+    raise EPropertyError.CreateFmt(SErrCannotWriteToProperty, [PropInfo^.Name]);
+  end;
+end;
+
+
+{ ---------------------------------------------------------------------
   Object properties
   ---------------------------------------------------------------------}
 
@@ -1711,11 +1821,7 @@ end;
 
 Function GetObjectProp(Instance: TObject; PropInfo : PPropInfo; MinClass: TClass): TObject;
 begin
-{$ifdef cpu64}
-  Result:=TObject(GetInt64Prop(Instance,PropInfo));
-{$else cpu64}
-  Result:=TObject(PtrInt(GetOrdProp(Instance,PropInfo)));
-{$endif cpu64}
+  Result:=TObject(GetPointerProp(Instance,PropInfo));
   If (MinClass<>Nil) and (Result<>Nil) Then
     If Not Result.InheritsFrom(MinClass) then
       Result:=Nil;
@@ -1729,12 +1835,9 @@ end;
 
 
 Procedure SetObjectProp(Instance: TObject; PropInfo : PPropInfo;  Value: TObject);
+
 begin
-{$ifdef cpu64}
-  SetInt64Prop(Instance,PropInfo,Int64(Value));
-{$else cpu64}
-  SetOrdProp(Instance,PropInfo,PtrInt(Value));
-{$endif cpu64}
+  SetPointerProp(Instance,PropInfo,Pointer(Value));
 end;
 
 
@@ -1742,6 +1845,7 @@ Function GetObjectPropClass(Instance: TObject; const PropName: string): TClass;
 begin
   Result:=GetTypeData(FindPropInfo(Instance,PropName,[tkClass])^.PropType)^.ClassType;
 end;
+
 
 Function  GetObjectPropClass(AClass: TClass; const PropName: string): TClass;
 begin
@@ -1784,6 +1888,8 @@ begin
         else
           Result:=TGetInterfaceProc(AMethod)();
       end;
+  else
+    raise EPropertyError.CreateFmt(SErrCannotReadProperty, [PropInfo^.Name]);
   end;
 end;
 
@@ -1795,11 +1901,14 @@ begin
 end;
 
 procedure SetInterfaceProp(Instance: TObject; PropInfo: PPropInfo; const Value: IInterface);
+
 type
   TSetIntfStrProcIndex=procedure(index:longint;const i:IInterface) of object;
   TSetIntfStrProc=procedure(i:IInterface) of object;
+
 var
   AMethod : TMethod;
+
 begin
   case Propinfo^.PropType^.Kind of
     tkInterface:
@@ -1820,6 +1929,8 @@ begin
               else
                 TSetIntfStrProc(AMethod)(Value);
             end;
+        else
+          raise EPropertyError.CreateFmt(SErrCannotWriteToProperty, [PropInfo^.Name]);
         end;
       end;
     tkInterfaceRaw:
@@ -1841,11 +1952,7 @@ end;
 function GetRawInterfaceProp(Instance: TObject; PropInfo: PPropInfo): Pointer;
 
 begin
-{$ifdef cpu64}
-  Result:=Pointer(GetInt64Prop(Instance,PropInfo));
-{$else cpu64}
-  Result:=Pointer(PtrInt(GetOrdProp(Instance,PropInfo)));
-{$endif cpu64}
+  Result:=GetPointerProp(Instance,PropInfo);
 end;
 
 procedure SetRawInterfaceProp(Instance: TObject; const PropName: string; const Value: Pointer);
@@ -1855,36 +1962,9 @@ begin
 end;
 
 procedure SetRawInterfaceProp(Instance: TObject; PropInfo: PPropInfo; const Value: Pointer);
-type
-  TSetPointerProcIndex=procedure(index:longint;const i:Pointer) of object;
-  TSetPointerProc=procedure(i:Pointer) of object;
-var
-  AMethod : TMethod;
+
 begin
-  case Propinfo^.PropType^.Kind of
-    tkInterfaceRaw:
-      begin
-        case (PropInfo^.PropProcs shr 2) and 3 of
-          ptField:
-            PPointer(Pointer(Instance)+PtrUInt(PropInfo^.SetProc))^:=Value;
-          ptStatic,
-          ptVirtual:
-            begin
-              if ((PropInfo^.PropProcs shr 2) and 3)=ptStatic then
-                AMethod.Code:=PropInfo^.SetProc
-              else
-                AMethod.Code:=PCodePointer(Pointer(Instance.ClassType)+PtrUInt(PropInfo^.SetProc))^;
-              AMethod.Data:=Instance;
-              if ((PropInfo^.PropProcs shr 6) and 1)<>0 then
-                TSetPointerProcIndex(AMethod)(PropInfo^.Index,Value)
-              else
-                TSetPointerProc(AMethod)(Value);
-            end;
-        end;
-      end;
-    tkInterface:
-      Raise Exception.Create('Cannot set interface from RAW interface');
-  end;
+  SetPointerProp(Instance,PropInfo,Value);
 end;
 
 { ---------------------------------------------------------------------
@@ -1897,14 +1977,17 @@ begin
 end;
 
 function GetDynArrayProp(Instance: TObject; PropInfo: PPropInfo): Pointer;
+
 type
   { we need a dynamic array as that type is usually passed differently from
     a plain pointer }
   TDynArray=array of Byte;
   TGetDynArrayProc=function:TDynArray of object;
   TGetDynArrayProcIndex=function(index:longint):TDynArray of object;
+
 var
   AMethod : TMethod;
+
 begin
   Result:=nil;
   if PropInfo^.PropType^.Kind<>tkDynArray then
@@ -1925,6 +2008,8 @@ begin
         else
           Result:=Pointer(TGetDynArrayProc(AMethod)());
       end;
+  else
+    raise EPropertyError.CreateFmt(SErrCannotReadProperty, [PropInfo^.Name]);
   end;
 end;
 
@@ -1934,14 +2019,17 @@ begin
 end;
 
 procedure SetDynArrayProp(Instance: TObject; PropInfo: PPropInfo; const Value: Pointer);
+
 type
   { we need a dynamic array as that type is usually passed differently from
     a plain pointer }
   TDynArray=array of Byte;
   TSetDynArrayProcIndex=procedure(index:longint;const i:TDynArray) of object;
   TSetDynArrayProc=procedure(i:TDynArray) of object;
+
 var
   AMethod: TMethod;
+
 begin
   if PropInfo^.PropType^.Kind<>tkDynArray then
     Exit;
@@ -1961,6 +2049,8 @@ begin
         else
           TSetDynArrayProc(AMethod)(TDynArray(Value));
       end;
+  else
+    raise EPropertyError.CreateFmt(SErrCannotWriteToProperty, [PropInfo^.Name]);
   end;
 end;
 
@@ -1969,13 +2059,16 @@ end;
   ---------------------------------------------------------------------}
 
 Function GetStrProp(Instance: TObject; PropInfo: PPropInfo): AnsiString;
+
 type
   TGetShortStrProcIndex=function(index:longint):ShortString of object;
   TGetShortStrProc=function():ShortString of object;
   TGetAnsiStrProcIndex=function(index:longint):AnsiString of object;
   TGetAnsiStrProc=function():AnsiString of object;
+
 var
   AMethod : TMethod;
+
 begin
   Result:='';
   case Propinfo^.PropType^.Kind of
@@ -2001,6 +2094,8 @@ begin
               else
                 Result:=TGetShortStrProc(AMethod)();
             end;
+        else
+          raise EPropertyError.CreateFmt(SErrCannotReadProperty, [PropInfo^.Name]);
         end;
       end;
     tkAString:
@@ -2021,6 +2116,8 @@ begin
               else
                 Result:=TGetAnsiStrProc(AMethod)();
             end;
+        else
+          raise EPropertyError.CreateFmt(SErrCannotReadProperty, [PropInfo^.Name]);
         end;
       end;
   end;
@@ -2028,13 +2125,16 @@ end;
 
 
 Procedure SetStrProp(Instance : TObject;PropInfo : PPropInfo; const Value : AnsiString);
+
 type
   TSetShortStrProcIndex=procedure(index:longint;const s:ShortString) of object;
   TSetShortStrProc=procedure(const s:ShortString) of object;
   TSetAnsiStrProcIndex=procedure(index:longint;s:AnsiString) of object;
   TSetAnsiStrProc=procedure(s:AnsiString) of object;
+
 var
   AMethod : TMethod;
+
 begin
   case Propinfo^.PropType^.Kind of
     tkWString:
@@ -2059,6 +2159,8 @@ begin
               else
                 TSetShortStrProc(AMethod)(Value);
             end;
+        else
+          raise EPropertyError.CreateFmt(SErrCannotWriteToProperty, [PropInfo^.Name]);
         end;
       end;
     tkAString:
@@ -2079,6 +2181,8 @@ begin
               else
                 TSetAnsiStrProc(AMethod)(Value);
             end;
+          else
+            raise EPropertyError.CreateFmt(SErrCannotWriteToProperty, [PropInfo^.Name]);
         end;
       end;
   end;
@@ -2140,6 +2244,8 @@ begin
               else
                 Result:=TGetWideStrProc(AMethod)();
             end;
+        else
+          raise EPropertyError.CreateFmt(SErrCannotReadProperty, [PropInfo^.Name]);
         end;
       end;
   end;
@@ -2176,29 +2282,36 @@ begin
               else
                 TSetWideStrProc(AMethod)(Value);
             end;
+        else
+          raise EPropertyError.CreateFmt(SErrCannotWriteToProperty, [PropInfo^.Name]);
         end;
       end;
   end;
 end;
 
 Function GetUnicodeStrProp(Instance: TObject; const PropName: string): UnicodeString;
+
 begin
   Result:=GetUnicodeStrProp(Instance, FindPropInfo(Instance, PropName));
 end;
 
 
 procedure SetUnicodeStrProp(Instance: TObject; const PropName: string; const Value: UnicodeString);
+
 begin
   SetUnicodeStrProp(Instance,FindPropInfo(Instance,PropName),Value);
 end;
 
 
 Function GetUnicodeStrProp(Instance: TObject; PropInfo: PPropInfo): UnicodeString;
+
 type
   TGetUnicodeStrProcIndex=function(index:longint):UnicodeString of object;
   TGetUnicodeStrProc=function():UnicodeString of object;
+
 var
   AMethod : TMethod;
+
 begin
   Result:='';
   case Propinfo^.PropType^.Kind of
@@ -2224,6 +2337,8 @@ begin
               else
                 Result:=TGetUnicodeStrProc(AMethod)();
             end;
+        else
+          raise EPropertyError.CreateFmt(SErrCannotReadProperty, [PropInfo^.Name]);
         end;
       end;
   end;
@@ -2231,11 +2346,14 @@ end;
 
 
 Procedure SetUnicodeStrProp(Instance: TObject; PropInfo: PPropInfo; const Value: UnicodeString);
+
 type
   TSetUnicodeStrProcIndex=procedure(index:longint;s:UnicodeString) of object;
   TSetUnicodeStrProc=procedure(s:UnicodeString) of object;
+
 var
   AMethod : TMethod;
+
 begin
   case Propinfo^.PropType^.Kind of
     tkSString,tkAString:
@@ -2260,6 +2378,8 @@ begin
               else
                 TSetUnicodeStrProc(AMethod)(Value);
             end;
+        else
+          raise EPropertyError.CreateFmt(SErrCannotWriteToProperty, [PropInfo^.Name]);
         end;
       end;
   end;
@@ -2270,8 +2390,10 @@ function GetRawbyteStrProp(Instance: TObject; PropInfo: PPropInfo): RawByteStrin
 type
   TGetRawByteStrProcIndex=function(index:longint): RawByteString of object;
   TGetRawByteStrProc=function():RawByteString of object;
+
 var
   AMethod : TMethod;
+
 begin
   Result:='';
   case Propinfo^.PropType^.Kind of
@@ -2299,6 +2421,8 @@ begin
               else
                 Result:=TGetRawByteStrProc(AMethod)();
             end;
+          else
+            raise EPropertyError.CreateFmt(SErrCannotReadProperty, [PropInfo^.Name]);
         end;
       end;
   end;
@@ -2314,8 +2438,10 @@ procedure SetRawByteStrProp(Instance: TObject; PropInfo: PPropInfo; const Value:
 type
   TSetRawByteStrProcIndex=procedure(index:longint;s:RawByteString) of object;
   TSetRawByteStrProc=procedure(s:RawByteString) of object;
+
 var
   AMethod : TMethod;
+
 begin
   case Propinfo^.PropType^.Kind of
     tkWString:
@@ -2342,15 +2468,17 @@ begin
               else
                 TSetRawByteStrProc(AMethod)(Value);
             end;
+        else
+          raise EPropertyError.CreateFmt(SErrCannotWriteToProperty, [PropInfo^.Name]);
         end;
       end;
   end;
 end;
+
 procedure SetRawByteStrProp(Instance: TObject; const PropName: string; const Value: RawByteString);
 
 begin
   SetRawByteStrProp(Instance,FindPropInfo(Instance,PropName),Value);
-
 end;
 
 
@@ -2362,6 +2490,7 @@ end;
   ---------------------------------------------------------------------}
 
 function GetFloatProp(Instance : TObject;PropInfo : PPropInfo) : Extended;
+
 type
   TGetExtendedProc = function:Extended of object;
   TGetExtendedProcIndex = function(Index: integer): Extended of object;
@@ -2371,8 +2500,10 @@ type
   TGetSingleProcIndex = function(Index: integer):Single of object;
   TGetCurrencyProc = function : Currency of object;
   TGetCurrencyProcIndex = function(Index: integer) : Currency of object;
+
 var
   AMethod : TMethod;
+
 begin
   Result:=0.0;
   case PropInfo^.PropProcs and 3 of
@@ -2420,11 +2551,14 @@ begin
               Result:=TGetCurrencyProcIndex(AMethod)(PropInfo^.Index);
         end;
       end;
+  else
+    raise EPropertyError.CreateFmt(SErrCannotReadProperty, [PropInfo^.Name]);
   end;
 end;
 
 
 Procedure SetFloatProp(Instance : TObject;PropInfo : PPropInfo; Value : Extended);
+
 type
   TSetExtendedProc = procedure(const AValue: Extended) of object;
   TSetExtendedProcIndex = procedure(Index: integer; AValue: Extended) of object;
@@ -2434,8 +2568,10 @@ type
   TSetSingleProcIndex = procedure(Index: integer; AValue: Single) of object;
   TSetCurrencyProc = procedure(const AValue: Currency) of object;
   TSetCurrencyProcIndex = procedure(Index: integer;  AValue: Currency) of object;
+
 Var
   AMethod : TMethod;
+
 begin
   case (PropInfo^.PropProcs shr 2) and 3 of
     ptfield:
@@ -2487,6 +2623,8 @@ begin
               TSetCurrencyProcIndex(AMethod)(PropInfo^.Index,Value);
         end;
       end;
+  else
+    raise EPropertyError.CreateFmt(SErrCannotWriteToProperty, [PropInfo^.Name]);
   end;
 end;
 
@@ -2510,12 +2648,15 @@ end;
 
 
 Function GetMethodProp(Instance : TObject;PropInfo : PPropInfo) : TMethod;
+
 type
   TGetMethodProcIndex=function(Index: Longint): TMethod of object;
   TGetMethodProc=function(): TMethod of object;
+
 var
   value: PMethod;
   AMethod : TMethod;
+
 begin
   Result.Code:=nil;
   Result.Data:=nil;
@@ -2539,16 +2680,21 @@ begin
         else
           Result:=TGetMethodProc(AMethod)();
       end;
+  else
+    raise EPropertyError.CreateFmt(SErrCannotReadProperty, [PropInfo^.Name]);
   end;
 end;
 
 
 Procedure SetMethodProp(Instance : TObject;PropInfo : PPropInfo; const Value : TMethod);
+
 type
   TSetMethodProcIndex=procedure(index:longint;p:TMethod) of object;
   TSetMethodProc=procedure(p:TMethod) of object;
+
 var
   AMethod : TMethod;
+
 begin
   case (PropInfo^.PropProcs shr 2) and 3 of
     ptField:
@@ -2566,6 +2712,8 @@ begin
         else
           TSetMethodProc(AMethod)(Value);
       end;
+  else
+    raise EPropertyError.CreateFmt(SErrCannotWriteToProperty, [PropInfo^.Name]);
   end;
 end;
 
@@ -2602,8 +2750,8 @@ end;
 
 Procedure SetVariantProp(Instance : TObject;PropInfo : PPropInfo; const Value: Variant);
 begin
-   CheckVariantEvent(CodePointer(OnSetVariantProp));
-   OnSetVariantProp(Instance,PropInfo,Value);
+  CheckVariantEvent(CodePointer(OnSetVariantProp));
+  OnSetVariantProp(Instance,PropInfo,Value);
 end;
 
 

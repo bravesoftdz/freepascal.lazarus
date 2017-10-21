@@ -1,4 +1,4 @@
-{ $Id: gtk2wsextctrls.pp 53717 2016-12-18 12:40:01Z mattias $}
+{ $Id: gtk2wsextctrls.pp 56140 2017-10-21 09:00:53Z michl $}
 {
  *****************************************************************************
  *                             Gtk2WSExtCtrls.pp                             * 
@@ -238,7 +238,7 @@ begin
 
   // issue #23940. Hide panel if we are not visible, but before setting callbacks.
   // so it won't trigger unnecessary events to LCL.
-  if not AWinControl.Visible and not (csDesigning in AWinControl.ComponentState) then
+  if not AWinControl.HandleObjectShouldBeVisible and not (csDesigning in AWinControl.ComponentState) then
     gtk_widget_hide(Frame);
 
   SetCallbacks(Frame, WidgetInfo);
