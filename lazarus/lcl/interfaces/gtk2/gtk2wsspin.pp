@@ -1,4 +1,4 @@
-{ $Id: gtk2wsspin.pp 51619 2016-02-13 16:50:49Z bart $}
+{ $Id: gtk2wsspin.pp 56148 2017-10-22 21:01:39Z michl $}
 {
  *****************************************************************************
  *                               Gtk2WSSpin.pp                               * 
@@ -22,7 +22,7 @@ interface
 
 uses
   // RTL
-  glib2, gtk2, SysUtils, Math,
+  glib2, gtk2, SysUtils, Classes, Math,
   // LCL
   Controls, LCLType, LCLProc, Spin, StdCtrls,
   // Widgetset
@@ -229,6 +229,8 @@ begin
 
   WidgetInfo := CreateWidgetInfo(Widget, AWinControl, AParams);
   Set_RC_Name(AWinControl, Widget);
+  if not AWinControl.HandleObjectShouldBeVisible and not (csDesigning in AWinControl.ComponentState) then
+    gtk_widget_hide(Widget);
   SetCallbacks(Widget, WidgetInfo);
   if Result <> 0 then
   begin

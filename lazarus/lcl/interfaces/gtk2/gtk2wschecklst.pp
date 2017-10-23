@@ -1,4 +1,4 @@
-{ $Id: gtk2wschecklst.pp 54697 2017-04-23 19:45:50Z zeljko $}
+{ $Id: gtk2wschecklst.pp 56148 2017-10-22 21:01:39Z michl $}
 {
  *****************************************************************************
  *                             Gtk2WSCheckLst.pp                             * 
@@ -230,7 +230,9 @@ begin
   g_signal_connect_after(Selection, 'changed',
     G_CALLBACK(@Gtk2WS_CheckListBoxSelectionChanged), WidgetInfo);
 
-  Set_RC_Name(AWinControl, P);  
+  Set_RC_Name(AWinControl, P);
+  if not AWinControl.HandleObjectShouldBeVisible and not (csDesigning in AWinControl.ComponentState) then
+    gtk_widget_hide(p);
   SetCallbacks(p, WidgetInfo);
 end;
 

@@ -5359,7 +5359,7 @@ var
 begin
   Result := varempty;
   for I := Low(VarTypeStr) to High(VarTypeStr) do
-    if UpperCase(VarTypeStr[I].Name) = UpperCase(AName) then
+    if CompareText(VarTypeStr[I].Name, AName) = 0 then
       Exit(VarTypeStr[I].VarType);
 end;
 
@@ -5449,9 +5449,9 @@ var
   V: Variant;
 begin
   try
-    VarCast(V{%H-}, Value, VarType(GetVarValue));
-  except
     V := Value;
+  except
+    V := 0; // Some backup value.
   end;
   SetVarValue(V);
 end;
