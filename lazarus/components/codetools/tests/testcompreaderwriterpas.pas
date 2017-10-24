@@ -1,25 +1,39 @@
 {
  Test with:
      ./runtests --format=plain --suite=TTestCompReaderWriterPas
-     ./runtests --format=plain --suite=TTestCompReaderWriterPas.TestWriteProperties
+     ./runtests --format=plain --suite=TTestCompReaderWriterPas.TestBaseTypesMaxValues
+
+Working:
+- boolean
+- integer
+- strings, codepage system and UTF8
+- float, currency
+- enum, custom enum range
+- set of enum, set of custom enum range
+- variant
+- method
+- persistent
+- root children
+- collection
 
 ToDo:
-- base types
-- UTF-8 string
-- unicodestring
-- enum
-- set
-- variant
-- datetime
-- TComponent.Left/Right
-- custom range TColor
-- subcomponents
-- cycle in subcomponents
+- enum: add unit, avoid nameclash with-do
+- set of boolean
+- set of char
+- custom integer TColor, add unit, avoid nameclash with-do
+- method, avoid nameclash with-do
+- reference not yet created child component -> delay property setter
 - ancestor
-- childpos
+- ancestor: childpos
+- ancestor: change parent
+- ancestor: change name
 - inline component
-- collection
-- DefineProperty
+- reference foreign root
+- reference foreign component
+- TComponent.Left/Right
+- DefineProperties
+- tkInterface
+- optional: use SetParentComponent instead of Parent:=
 }
 unit TestCompReaderWriterPas;
 
@@ -31,12 +45,11 @@ interface
 
 uses
   Classes, SysUtils, typinfo, RtlConsts, LazLoggerBase, LazUTF8, fpcunit,
-  testregistry, CodeToolManager, LinkScanner, TestStdCodetools;
+  testregistry, CodeToolManager, LinkScanner, TestStdCodetools, variants;
 
 const
-  CWPDefaultSignature = '// component writer V1.0';
+  CWPDefaultSignature = '// Pascal stream V1.0';
 type
-  TDummyComp = class(TComponent); // to access TComponent protected members
   TCWPFindAncestorEvent = procedure(Sender: TObject; Component: TComponent;
     const Name: string; var Ancestor, RootAncestor: TComponent) of object;
   TCWPGetMethodName = procedure(Sender: TObject; Instance: TPersistent;
@@ -55,6 +68,7 @@ type
   private
     FAssignOp: String;
     FCurIndent: integer;
+    FIgnoreChildren: Boolean;
     FIndentStep: integer;
     FLineEnding: string;
     FOnGetMethodName: TCWPGetMethodName;
@@ -69,17 +83,26 @@ type
     FRootAncestor: TComponent;
     FAncestors: TStringList;
     FAncestorPos: Integer;
-    //FCurrentPos: Integer;
+    FCurrentPos: Integer;
     FOnFindAncestor: TCWPFindAncestorEvent;
+    procedure AddToAncestorList(Component: TComponent);
     procedure DetermineAncestor(Component: TComponent);
     procedure DoFindAncestor(Component: TComponent);
     procedure SetRoot(const AValue: TComponent);
     procedure WriteComponentData(Instance: TComponent);
+    procedure WriteChildren(Component: TComponent);
     procedure WriteProperty(Instance: TPersistent; PropInfo: PPropInfo);
-    procedure WriteProperties(Instance: TComponent);
+    procedure WriteProperties(Instance: TPersistent);
+    procedure WriteCollection(PropName: string; Collection: TCollection);
+    function GetComponentPath(Component: TComponent): string;
+    function GetBoolLiteral(b: boolean): string;
     function GetStringLiteral(const s: string): string;
     function GetWStringLiteral(p: PWideChar; Count: integer): string;
     function GetFloatLiteral(const e: Extended): string;
+    function GetCurrencyLiteral(const c: currency): string;
+    function ShortenFloat(s: string): string;
+    function GetEnumExpr(TypeInfo: PTypeInfo; Value: integer;
+      AllowOutOfRange: boolean): string;
   public
     constructor Create(AStream: TStream);
     destructor Destroy; override;
@@ -104,6 +127,7 @@ type
     property CurIndent: integer read FCurIndent write FCurIndent;
     property IndentStep: integer read FIndentStep write FIndentStep;
     property Options: TCWPOptions read FOptions write FOptions;
+    property IgnoreChildren: Boolean read FIgnoreChildren write FIgnoreChildren;
   public
     // code snippets
     property LineEnding: string read FLineEnding write FLineEnding;
@@ -198,6 +222,7 @@ type
   { TCompBaseTypesCustomStored }
 
   TCompBaseTypesCustomStored = class(TComponent)
+    procedure OnClick(Sender: TObject);
   private
     FABoolean: Boolean;
     FAByte: Byte;
@@ -223,6 +248,7 @@ type
     FAWordBool: WordBool;
     FEnum: TEnum;
     FEnumRg: TEnumRg;
+    FEvent: TNotifyEvent;
     FSetOfEnum: TSetOfEnum;
     FSetOfEnumRg: TSetOfEnumRg;
     function ABooleanIsStored: Boolean;
@@ -249,6 +275,7 @@ type
     function AWordIsStored: Boolean;
     function EnumIsStored: Boolean;
     function EnumRgIsStored: Boolean;
+    function EventIsStored: Boolean;
     function SetOfEnumIsStored: Boolean;
     function SetOfEnumRgIsStored: Boolean;
   public
@@ -278,8 +305,9 @@ type
     DefEnumRg: TEnumRg;
     DefSetOfEnum: TSetOfEnum;
     DefSetOfEnumRg: TSetOfEnumRg;
-  published
+    DefEvent: TNotifyEvent;
     constructor Create(AOwner: TComponent); override;
+  published
     property ABoolean: Boolean read FABoolean write FABoolean stored ABooleanIsStored;
     property AByteBool: ByteBool read FAByteBool write FAByteBool stored AByteBoolIsStored;
     property AWordBool: WordBool read FAWordBool write FAWordBool stored AWordBoolIsStored;
@@ -306,6 +334,147 @@ type
     property EnumRg: TEnumRg read FEnumRg write FEnumRg stored EnumRgIsStored;
     property SetOfEnum: TSetOfEnum read FSetOfEnum write FSetOfEnum stored SetOfEnumIsStored;
     property SetOfEnumRg: TSetOfEnumRg read FSetOfEnumRg write FSetOfEnumRg stored SetOfEnumRgIsStored;
+    property Event: TNotifyEvent read FEvent write FEvent stored EventIsStored;
+  end;
+
+  { TCompVariants }
+
+  TCompVariants = class(TComponent)
+  private
+    FV1: variant;
+    FV10: variant;
+    FV11: variant;
+    FV12: variant;
+    FV13: variant;
+    FV14: variant;
+    FV15: variant;
+    FV16: variant;
+    FV17: variant;
+    FV18: variant;
+    FV19: variant;
+    FV2: variant;
+    FV20: variant;
+    FV3: variant;
+    FV4: variant;
+    FV5: variant;
+    FV6: variant;
+    FV7: variant;
+    FV8: variant;
+    FV9: variant;
+  published
+    property V1: variant read FV1 write FV1;
+    property V2: variant read FV2 write FV2;
+    property V3: variant read FV3 write FV3;
+    property V4: variant read FV4 write FV4;
+    property V5: variant read FV5 write FV5;
+    property V6: variant read FV6 write FV6;
+    property V7: variant read FV7 write FV7;
+    property V8: variant read FV8 write FV8;
+    property V9: variant read FV9 write FV9;
+    property V10: variant read FV10 write FV10;
+    property V11: variant read FV11 write FV11;
+    property V12: variant read FV12 write FV12;
+    property V13: variant read FV13 write FV13;
+    property V14: variant read FV14 write FV14;
+    property V15: variant read FV15 write FV15;
+    property V16: variant read FV16 write FV16;
+    property V17: variant read FV17 write FV17;
+    property V18: variant read FV18 write FV18;
+    property V19: variant read FV19 write FV19;
+    property V20: variant read FV20 write FV20;
+  end;
+
+  { TPersistentSimple }
+
+  TPersistentSimple = class(TPersistent)
+  private
+    FSize: longint;
+    FSub: TPersistentSimple;
+  published
+    property Size: longint read FSize write FSize default 0;
+    property Sub: TPersistentSimple read FSub write FSub;
+  end;
+
+  { TCompPropPersistent }
+
+  TCompPropPersistent = class(TComponent)
+    procedure OnA(Sender: TObject);
+    procedure OnB(Sender: TObject);
+    procedure OnC(Sender: TObject);
+  private
+    FAfter: longint;
+    FBefore: longint;
+    FMiddle: longint;
+    FOnClick: TNotifyEvent;
+    FSub: TPersistentSimple;
+    FSub2: TPersistentSimple;
+  published
+    property Before: longint read FBefore write FBefore default 0;
+    property Sub: TPersistentSimple read FSub write FSub;
+    property Middle: longint read FMiddle write FMiddle default 0;
+    property Sub2: TPersistentSimple read FSub2 write FSub2;
+    property After: longint read FAfter write FAfter default 0;
+    property OnClick: TNotifyEvent read FOnClick write FOnClick;
+  end;
+
+  { TSimpleControl }
+
+  TSimpleControl = class(TComponent)
+    procedure OnA(Sender: TObject);
+    procedure OnB(Sender: TObject);
+    procedure OnC(Sender: TObject);
+  private
+    FChildren: TFPList;
+    FNext: TSimpleControl;
+    FOnClick: TNotifyEvent;
+    FParent: TSimpleControl;
+    FSub: TPersistentSimple;
+    procedure SetParent(const AValue: TSimpleControl);
+  protected
+    procedure GetChildren(Proc: TGetChildProc; Root: TComponent); override;
+    procedure SetParentComponent(Value: TComponent); override;
+  public
+    constructor Create(AOwner: TComponent); override;
+    destructor Destroy; override;
+    function GetParentComponent: TComponent; override;
+    property Parent: TSimpleControl read FParent write SetParent;
+  published
+    property Next: TSimpleControl read FNext write FNext;
+    property Sub: TPersistentSimple read FSub write FSub;
+    property OnClick: TNotifyEvent read FOnClick write FOnClick;
+  end;
+
+  { TSimpleCollectionItem }
+
+  TSimpleCollectionItem = class(TCollectionItem)
+  private
+    FBefore: longint;
+    FOnClick: TNotifyEvent;
+    FSub: TPersistentSimple;
+  published
+    property Before: longint read FBefore write FBefore default 0;
+    property Sub: TPersistentSimple read FSub write FSub;
+    property OnClick: TNotifyEvent read FOnClick write FOnClick;
+  end;
+
+  TSimpleCollection = class(TCollection)
+  private
+    function GetThings(Index: integer): TSimpleCollectionItem;
+  public
+    property Things[Index: integer]: TSimpleCollectionItem read GetThings; default;
+  end;
+
+  { TSimpleControlWithCollection }
+
+  TSimpleControlWithCollection = class(TSimpleControl)
+  private
+    FItems: TSimpleCollection;
+    procedure SetItems(const AValue: TSimpleCollection);
+  public
+    constructor Create(AOwner: TComponent); override;
+    destructor Destroy; override;
+  published
+    property Items: TSimpleCollection read FItems write SetItems;
   end;
 
   { TTestCompReaderWriterPas }
@@ -330,9 +499,21 @@ type
     procedure TestStringUTF8;
     procedure TestWideString_SrcCodePageSystem;
     procedure TestWideString_SrcCodePageUTF8;
+    procedure TestVariant;
+    procedure TestPropPersistent;
+    procedure TestAncestor;
+    procedure TestChildComponent;
+    procedure TestCollection;
   end;
 
 implementation
+
+function CreateRootName(aComponent: TComponent): string;
+begin
+  Result:=aComponent.ClassName;
+  Delete(Result,1,1);
+  Result:=Result+'1';
+end;
 
 function IsValidUTF8(p: PChar): integer;
 var
@@ -400,6 +581,7 @@ end;
 
 
 Type
+  TAccessComp = class(TComponent); // to access TComponent protected members
 
   { TPosComponent }
 
@@ -408,6 +590,113 @@ Type
     FComponent: TComponent;
     constructor Create(APos: Integer; AComponent: TComponent);
   end;
+
+{ TSimpleCollection }
+
+function TSimpleCollection.GetThings(Index: integer): TSimpleCollectionItem;
+begin
+  Result:=TSimpleCollectionItem(Items[Index]);
+end;
+
+{ TSimpleControlWithCollection }
+
+procedure TSimpleControlWithCollection.SetItems(const AValue: TSimpleCollection
+  );
+begin
+  if FItems=AValue then Exit;
+  FItems.Assign(AValue);
+end;
+
+constructor TSimpleControlWithCollection.Create(AOwner: TComponent);
+begin
+  inherited Create(AOwner);
+  FItems:=TSimpleCollection.Create(TSimpleCollectionItem);
+end;
+
+destructor TSimpleControlWithCollection.Destroy;
+begin
+  FreeAndNil(FItems);
+  inherited Destroy;
+end;
+
+{ TSimpleControl }
+
+procedure TSimpleControl.OnA(Sender: TObject);
+begin
+  if Sender=nil then ;
+end;
+
+procedure TSimpleControl.OnB(Sender: TObject);
+begin
+  if Sender=nil then ;
+end;
+
+procedure TSimpleControl.OnC(Sender: TObject);
+begin
+  if Sender=nil then ;
+end;
+
+procedure TSimpleControl.SetParent(const AValue: TSimpleControl);
+begin
+  if FParent=AValue then Exit;
+  if FParent<>nil then
+    FParent.FChildren.Remove(Self);
+  FParent:=AValue;
+  if FParent<>nil then
+    FParent.FChildren.Add(Self);
+end;
+
+procedure TSimpleControl.GetChildren(Proc: TGetChildProc; Root: TComponent);
+var
+  i: Integer;
+begin
+  if Root=nil then ;
+  for i:=0 to FChildren.Count-1 do
+    Proc(TComponent(FChildren[i]));
+end;
+
+procedure TSimpleControl.SetParentComponent(Value: TComponent);
+begin
+  Parent:=Value as TSimpleControl;
+end;
+
+constructor TSimpleControl.Create(AOwner: TComponent);
+begin
+  inherited Create(AOwner);
+  FChildren:=TFPList.Create;
+end;
+
+destructor TSimpleControl.Destroy;
+var
+  i: Integer;
+begin
+  for i:=FChildren.Count-1 downto 0 do
+    TSimpleControl(FChildren[i]).Parent:=nil;
+  FreeAndNil(FChildren);
+  inherited Destroy;
+end;
+
+function TSimpleControl.GetParentComponent: TComponent;
+begin
+  Result:=FParent;
+end;
+
+{ TCompPropPersistent }
+
+procedure TCompPropPersistent.OnA(Sender: TObject);
+begin
+  if Sender=nil then ;
+end;
+
+procedure TCompPropPersistent.OnB(Sender: TObject);
+begin
+  if Sender=nil then ;
+end;
+
+procedure TCompPropPersistent.OnC(Sender: TObject);
+begin
+  if Sender=nil then ;
+end;
 
 { TPosComponent }
 
@@ -418,6 +707,11 @@ begin
 end;
 
 { TCompBaseTypesCustomStored }
+
+procedure TCompBaseTypesCustomStored.OnClick(Sender: TObject);
+begin
+  if Sender=nil then ;
+end;
 
 function TCompBaseTypesCustomStored.ABooleanIsStored: Boolean;
 begin
@@ -539,6 +833,11 @@ begin
   Result:=FEnumRg<>DefEnumRg;
 end;
 
+function TCompBaseTypesCustomStored.EventIsStored: Boolean;
+begin
+  Result:=TMethod(FEvent).Code<>TMethod(DefEvent).Code;
+end;
+
 function TCompBaseTypesCustomStored.SetOfEnumIsStored: Boolean;
 begin
   Result:=FSetOfEnum<>DefSetOfEnum;
@@ -555,6 +854,11 @@ begin
 end;
 
 { TCompWriterPas }
+
+procedure TCompWriterPas.AddToAncestorList(Component: TComponent);
+begin
+  FAncestors.AddObject(Component.Name,TPosComponent.Create(FAncestors.Count,Component));
+end;
 
 procedure TCompWriterPas.DetermineAncestor(Component: TComponent);
 var
@@ -596,35 +900,108 @@ begin
 end;
 
 procedure TCompWriterPas.WriteComponentData(Instance: TComponent);
+var
+  HasAncestor: Boolean;
 
   procedure WriteSetParent;
+  var
+    DefParent: TComponent;
   begin
-    if Parent=nil then exit;
-    WriteAssign('Parent',Parent.Name);
+    if HasAncestor and (Ancestor is TComponent) then
+    begin
+      DefParent:=TComponent(Ancestor).GetParentComponent;
+      if Assigned(DefParent) then
+      begin
+        if DefParent=FRootAncestor then
+          DefParent:=Root
+        else if (DefParent.Owner = FRootAncestor) and
+            (Parent.Owner = Root) and
+            (CompareText(DefParent.Name,Parent.Name)=0) then
+          DefParent:=Parent;
+      end;
+    end else
+      DefParent:=nil;
+    if Parent=DefParent then exit;
+    WriteAssign('Parent',GetComponentPath(Parent));
   end;
 
 begin
-  if Instance<>LookupRoot then
-  begin
+  HasAncestor := Assigned(Ancestor) and ((Instance = Root) or
+    (Instance.ClassType = Ancestor.ClassType));
+  if Instance=LookupRoot then
+    WriteAssign('Name',''''+Instance.Name+'''')
+  else begin
+    if not HasAncestor then
+      WriteAssign(Instance.Name,Instance.ClassName+'.Create(Self)');
     WriteIndent;
     Write('with ');
     Write(Instance.Name);
     Write(' do begin');
     WriteLn;
     Indent;
+    if not HasAncestor then
+      WriteAssign('Name',''''+Instance.Name+'''');
+    if cwpoSetParentFirst in Options then
+      WriteSetParent;
   end;
-  WriteAssign('Name',''''+Instance.Name+'''');
-  if cwpoSetParentFirst in Options then
-    WriteSetParent;
   WriteProperties(Instance);
-  if not (cwpoSetParentFirst in Options) then
-    WriteSetParent;
   if Instance<>LookupRoot then
   begin
+    if not (cwpoSetParentFirst in Options) then
+      WriteSetParent;
     Unindent;
     WriteIndent;
     Write('end;');
     WriteLn;
+  end;
+  if not IgnoreChildren then
+    WriteChildren(Instance);
+end;
+
+procedure TCompWriterPas.WriteChildren(Component: TComponent);
+var
+  SRoot, SRootA, SParent: TComponent;
+  SList: TStringList;
+  SPos, i: Integer;
+begin
+  // Write children list.
+  // While writing children, the ancestor environment must be saved
+  // This is recursive...
+  SRoot:=FRoot;
+  SRootA:=FRootAncestor;
+  SList:=FAncestors;
+  SPos:=FCurrentPos;
+  SParent:=Parent;
+  try
+    FAncestors:=Nil;
+    FCurrentPos:=0;
+    FAncestorPos:=-1;
+    FParent:=Component;
+    if csInline in Component.ComponentState then
+      FRoot:=Component;
+    if (FAncestor is TComponent) then
+    begin
+      FAncestors:=TStringList.Create;
+      if csInline in TComponent(FAncestor).ComponentState then
+        FRootAncestor := TComponent(FAncestor);
+      TAccessComp(FAncestor).GetChildren(@AddToAncestorList,FRootAncestor);
+      FAncestors.Sorted:=True;
+    end;
+    try
+      TAccessComp(Component).GetChildren(@WriteComponent, FRoot);
+    finally
+      if Assigned(FAncestor) then
+        for i:=0 to FAncestors.Count-1 do
+          FAncestors.Objects[i].Free;
+      FreeAndNil(FAncestors);
+    end;
+  finally
+    FParent:=SParent;
+    FAncestors:=SList;
+    FRoot:=SRoot;
+    FRootAncestor:=SRootA;
+    FCurrentPos:=SPos;
+    FAncestorPos:=SPos;
   end;
 end;
 
@@ -634,10 +1011,10 @@ type
   TSet = set of 0..31;
 var
   PropType, CompType: PTypeInfo;
-  ObjValue: TObject;
+  ObjValue, AncestorObj: TObject;
   HasAncestor, BoolValue, DefBoolValue: Boolean;
   Int32Value, DefValue: longint;
-  PropName, Ident, s, StrValue, DefStrValue: String;
+  PropName, Ident, s, StrValue, DefStrValue, Name, SavedPropPath: String;
   IntToIdentFn: TIntToIdent;
   i, j: Integer;
   Int64Value, DefInt64Value: Int64;
@@ -647,6 +1024,8 @@ var
   UStrValue, UDefStrValue: UnicodeString;
   VarValue, DefVarValue: tvardata;
   aTypeData: PTypeData;
+  Component, C: TComponent;
+  SavedAncestor: TPersistent;
 begin
   // do not stream properties without getter
   if not Assigned(PropInfo^.GetProc) then
@@ -667,7 +1046,7 @@ begin
   HasAncestor := Assigned(Ancestor) and ((Instance = Root) or
     (Instance.ClassType = Ancestor.ClassType));
   PropName:=FPropPath + PropInfo^.Name;
-  System.writeln('TWriter.WriteProperty PropName="',PropName,'" TypeName=',PropType^.Name,' Kind=',GetEnumName(TypeInfo(TTypeKind),ord(PropType^.Kind)),' HasAncestor=',HasAncestor);
+  debugln(['TWriter.WriteProperty PropName="',PropName,'" TypeName=',PropType^.Name,' Kind=',GetEnumName(TypeInfo(TTypeKind),ord(PropType^.Kind)),' HasAncestor=',HasAncestor]);
 
   case PropType^.Kind of
     tkInteger, tkChar, tkEnumeration, tkSet, tkWChar:
@@ -677,7 +1056,7 @@ begin
           DefValue := GetOrdProp(Ancestor, PropInfo)
         else
           DefValue := PPropInfo(PropInfo)^.Default;
-        //System.writeln(PropInfo^.Name,', HasAncestor=',HasAncestor,', Value=',Int32Value,', Default=',DefValue);
+        //debugln([PropInfo^.Name,', HasAncestor=',HasAncestor,', Value=',Int32Value,', Default=',DefValue]);
         if (Int32Value <> DefValue) or (DefValue=longint($80000000)) then
         begin
           case PropType^.Kind of
@@ -729,12 +1108,12 @@ begin
                 begin
                   if s<>'' then s:=s+',';
                   // ToDo: store needed unit
-                  s:=s+GetEnumName(CompType, i);
+                  s:=s+GetEnumExpr(CompType, i,false);
                   j:=i;
                   while (i<31) and (byte(i+1) in TSet(Int32Value)) do
                     inc(i);
                   if i>j then
-                    s:=s+'..'+GetEnumName(CompType, i);
+                    s:=s+'..'+GetEnumExpr(CompType, i,false);
                 end;
                 inc(i);
               end;
@@ -742,7 +1121,7 @@ begin
               end;
             tkEnumeration:
               // ToDo: store needed unit
-              WriteAssign(PropName,GetEnumName(PropType, Int32Value));
+              WriteAssign(PropName,GetEnumExpr(PropType, Int32Value,true));
           end;
         end;
       end;
@@ -769,6 +1148,7 @@ begin
           DefMethodValue.Code := nil;
         end;
 
+        //debugln(['TCompWriterPas.WriteProperty ',dbgs(MethodValue.Data),' ',dbgs(MethodValue.Code),' ',dbgs(DefMethodValue.Data),' ',dbgs(DefMethodValue.Code)]);
         if Assigned(OnGetMethodName) then
         begin
           if (MethodValue.Code <> DefMethodValue.Code) or
@@ -781,6 +1161,7 @@ begin
               if Ident='' then
                 WriteAssign(PropName,'nil')
               else
+                // ToDo: check nameclash of Ident with current with-do block
                 WriteAssign(PropName,'@'+Ident);
             end;
           end;
@@ -788,13 +1169,14 @@ begin
           if (MethodValue.Code <> DefMethodValue.Code) then
           begin
             if not Assigned(MethodValue.Code) then
-              s:=''
+              Ident:=''
             else
-              s:=FLookupRoot.MethodName(MethodValue.Code);
-            if s='' then
+              Ident:=FLookupRoot.MethodName(MethodValue.Code);
+            if Ident='' then
               WriteAssign(PropName,'nil')
             else
-              WriteAssign(PropName,'@'+s);
+              // ToDo: check nameclash of Ident with current with-do block
+              WriteAssign(PropName,'@'+Ident);
           end;
         end;
       end;
@@ -833,8 +1215,8 @@ begin
       end;
     tkVariant:
       begin
-        { Ensure that a Variant manager is installed }
-        if not assigned(VarClearProc) then
+        // Ensure that a Variant manager is installed
+        if not Assigned(VarClearProc) then
           raise EWriteError.Create(SErrNoVariantSupport);
 
         VarValue := tvardata(GetVariantProp(Instance, PropInfo));
@@ -845,13 +1227,139 @@ begin
 
         if (CompareByte(VarValue,DefVarValue,sizeof(VarValue)) <> 0) then
           begin
-            {$IFDEF VerboseCompWriterPas}
-            System.writeln('TCompWriterPas.WriteProperty Property="',PropName,'" Kind=',PropType^.Kind);
-            raise EWriteError.Create('proptype not supported: '+GetEnumName(TypeInfo(PropType^.Kind),ord(PropType^.Kind)));
-            {$ENDIF}
-            { can't use variant() typecast, pulls in variants unit }
+            // can't use variant() typecast, pulls in variants unit
+            case VarValue.vtype of
+            varsmallint : WriteAssign(PropName,'SmallInt('+IntToStr(VarValue.vsmallint)+')');
+            varinteger : WriteAssign(PropName,'LongInt('+IntToStr(VarValue.vinteger)+')');
+            varsingle : WriteAssign(PropName,'Single('+GetFloatLiteral(VarValue.vsingle)+')');
+            vardouble : WriteAssign(PropName,'Double('+GetFloatLiteral(VarValue.vdouble)+')');
+            vardate : WriteAssign(PropName,'TDateTime('+GetFloatLiteral(VarValue.vdate)+')');
+            varcurrency : WriteAssign(PropName,'Currency('+GetCurrencyLiteral(VarValue.vcurrency)+')');
+            //varolestr : (volestr : pwidechar);
+            //vardispatch : (vdispatch : pointer);
+            //varerror : (verror : hresult);
+            varboolean : WriteAssign(PropName,GetBoolLiteral(VarValue.vboolean));
+            //varunknown : (vunknown : pointer);
+            // vardecimal : ( : );
+            varshortint : WriteAssign(PropName,'ShortInt('+IntToStr(VarValue.vshortint)+')');
+            varbyte : WriteAssign(PropName,'Byte('+IntToStr(VarValue.vbyte)+')');
+            varword : WriteAssign(PropName,'Word('+IntToStr(VarValue.vword)+')');
+            varlongword : WriteAssign(PropName,'LongWord('+IntToStr(VarValue.vlongword)+')');
+            varint64 : WriteAssign(PropName,'Int64('+IntToStr(VarValue.vint64)+')');
+            varqword : WriteAssign(PropName,'QWord('+IntToStr(VarValue.vqword)+')');
+            // duplicate: varword64
+            varstring : WriteAssign(PropName,GetStringLiteral(AnsiString(VarValue.vstring)));
+            //varany :  (vany : pointer);
+            //vararray : (varray : pvararray);
+            //varbyref : (vpointer : pointer);
+            //varrecord : (vrecord : pointer;precinfo : pointer);
+            else
+              {$IFDEF VerboseCompWriterPas}
+              debugln(['TCompWriterPas.WriteProperty Property="',PropName,'" Kind=',PropType^.Kind,' vtype=',VarValue.vtype]);
+              raise EWriteError.Create('proptype not supported: '+GetEnumName(TypeInfo(PropType^.Kind),ord(PropType^.Kind))+' vtype='+dbgs(VarValue.vtype));
+              {$ENDIF}
+            end;
             //ToDo WriteVariant(pvariant(@VarValue)^);
           end;
+      end;
+    tkClass:
+      begin
+        ObjValue := TObject(GetObjectProp(Instance, PropInfo));
+        if HasAncestor then
+        begin
+          AncestorObj := TObject(GetObjectProp(Ancestor, PropInfo));
+          if (AncestorObj is TComponent) and
+             (ObjValue is TComponent) then
+          begin
+            //debugln(['TWriter.WriteProperty AncestorObj=',TComponent(AncestorObj).Name,' OwnerFit=',TComponent(AncestorObj).Owner = FRootAncestor,' ',TComponent(ObjValue).Name,' OwnerFit=',TComponent(ObjValue).Owner = Root]);
+            if (AncestorObj<>ObjValue) and
+               (TComponent(AncestorObj).Owner = FRootAncestor) and
+               (TComponent(ObjValue).Owner = Root) and
+               (CompareText(TComponent(AncestorObj).Name,TComponent(ObjValue).Name)=0) then
+            begin
+              // different components, but with the same name
+              // -> keep property value
+              AncestorObj := ObjValue;
+            end;
+          end;
+        end else
+          AncestorObj := nil;
+
+        if not Assigned(ObjValue) then
+        begin
+          if ObjValue <> AncestorObj then
+            WriteAssign(PropName,'Nil');
+        end
+        else if ObjValue.InheritsFrom(TPersistent) then
+        begin
+          // Subcomponents are streamed the same way as persistents
+          if ObjValue.InheritsFrom(TComponent)
+            and ((not (csSubComponent in TComponent(ObjValue).ComponentStyle))
+                 or ((TComponent(ObjValue).Owner<>Instance) and (TComponent(ObjValue).Owner<>Nil))) then
+          begin
+            Component := TComponent(ObjValue);
+            if (ObjValue <> AncestorObj)
+                and not (csTransient in Component.ComponentStyle) then
+            begin
+              // set property value
+              Name:= '';
+              C:= Component;
+              While (C<>Nil) and (C.Name<>'') do
+              begin
+                If (Name<>'') Then
+                  Name:='.'+Name;
+                if C.Owner = LookupRoot then
+                begin
+                  Name := C.Name+Name;
+                  break;
+                end
+                else if C = LookupRoot then
+                begin
+                  Name := 'Self' + Name;
+                  break;
+                end;
+                Name:=C.Name + Name;
+                C:= C.Owner;
+              end;
+              if (C=nil) and (Component.Owner=nil) then
+                if (Name<>'') then // Component is a foreign root
+                  ; // Name:=Name+'.Owner';
+              if Length(Name) > 0 then
+                WriteAssign(PropName,Name);
+            end; //(ObjValue <> AncestorObj)
+          end // ObjValue.InheritsFrom(TComponent)
+          else
+          begin
+            // keep property value, set sub properties recursively with full path
+            // e.g. Font.Size:=5;
+            SavedAncestor := Ancestor;
+            SavedPropPath := FPropPath;
+            try
+              FPropPath := FPropPath + PPropInfo(PropInfo)^.Name + '.';
+              if HasAncestor then
+                Ancestor := TPersistent(GetObjectProp(Ancestor, PropInfo));
+              WriteProperties(TPersistent(ObjValue));
+            finally
+              Ancestor := SavedAncestor;
+              FPropPath := SavedPropPath;
+            end;
+            if ObjValue.InheritsFrom(TCollection) then
+            begin
+              if (not HasAncestor) or (not CollectionsEqual(TCollection(ObjValue),
+                TCollection(GetObjectProp(Ancestor, PropInfo)),Root,RootAncestor)) then
+              begin
+                // create collection items
+                SavedPropPath := FPropPath;
+                try
+                  SetLength(FPropPath, 0);
+                  WriteCollection(PropName,TCollection(ObjValue));
+                finally
+                  FPropPath := SavedPropPath;
+                end;
+              end;
+            end // TCollection
+          end;
+        end; // Inheritsfrom(TPersistent)
       end;
     tkInt64, tkQWord:
       begin
@@ -874,19 +1382,19 @@ begin
         else
           DefBoolValue := PropInfo^.Default<>0;
         DefValue:=PropInfo^.Default;
-        //System.writeln(PropInfo^.Name,', HasAncestor=',HasAncestor,', BoolValue=',BoolValue,', DefBoolValue=',DefBoolValue,' Default=',DefValue);
+        //debugln([PropInfo^.Name,', HasAncestor=',HasAncestor,', BoolValue=',BoolValue,', DefBoolValue=',DefBoolValue,' Default=',DefValue]);
         if (BoolValue<>DefBoolValue) or (DefValue=longint($80000000)) then
-          WriteAssign(PropName,BoolToStr(BoolValue,'True','False'));
+          WriteAssign(PropName,GetBoolLiteral(BoolValue));
       end;
   else
     {$IFDEF VerboseCompWriterPas}
-    System.writeln('TCompWriterPas.WriteProperty Property="',PropName,'" Kind=',PropType^.Kind);
+    debugln(['TCompWriterPas.WriteProperty Property="',PropName,'" Kind=',PropType^.Kind]);
     raise EWriteError.Create('proptype not supported: '+GetEnumName(TypeInfo(PropType^.Kind),ord(PropType^.Kind)));
     {$ENDIF}
   end;
 end;
 
-procedure TCompWriterPas.WriteProperties(Instance: TComponent);
+procedure TCompWriterPas.WriteProperties(Instance: TPersistent);
 var
   PropCount, i: integer;
   PropList: PPropList;
@@ -901,6 +1409,48 @@ begin
       Freemem(PropList);
     end;
   // ToDo: Instance.DefineProperties(Self);
+end;
+
+procedure TCompWriterPas.WriteCollection(PropName: string;
+  Collection: TCollection);
+var
+  i: Integer;
+  Item: TCollectionItem;
+begin
+  WriteIndent;
+  Write(PropName+'.Clear;');
+  WriteLn;
+  for i:=0 to Collection.Count-1 do
+  begin
+    Item:=Collection.Items[i];
+    WriteIndent;
+    Write('with '+Item.ClassName+'('+PropName+'.Add) do begin');
+    WriteLn;
+    Indent;
+    WriteProperties(Item);
+    Unindent;
+    WriteIndent;
+    Write('end;');
+    WriteLn;
+  end;
+end;
+
+function TCompWriterPas.GetComponentPath(Component: TComponent): string;
+begin
+  if Component=nil then
+    Result:='Nil'
+  else if Component=LookupRoot then
+    Result:='Self'
+  else
+    Result:=Component.Name;
+end;
+
+function TCompWriterPas.GetBoolLiteral(b: boolean): string;
+begin
+  if b then
+    Result:='True'
+  else
+    Result:='False';
 end;
 
 function TCompWriterPas.GetStringLiteral(const s: string): string;
@@ -1026,10 +1576,25 @@ end;
 function TCompWriterPas.GetFloatLiteral(const e: Extended): string;
 var
   s: String;
-  p, i: SizeInt;
 begin
   s:='';
   str(e,s);
+  Result:=ShortenFloat(s);
+end;
+
+function TCompWriterPas.GetCurrencyLiteral(const c: currency): string;
+var
+  s: String;
+begin
+  s:='';
+  str(c,s);
+  Result:=ShortenFloat(s);
+end;
+
+function TCompWriterPas.ShortenFloat(s: string): string;
+var
+  p, i: SizeInt;
+begin
   // remove unneeded leading 0 of exponent
   p:=Pos('E',s);
   if p<1 then exit;
@@ -1053,6 +1618,20 @@ begin
   if s[1]=' ' then
     Delete(s,1,1);
   Result:=s;
+end;
+
+function TCompWriterPas.GetEnumExpr(TypeInfo: PTypeInfo; Value: integer;
+  AllowOutOfRange: boolean): string;
+var
+  PT: PTypeData;
+begin
+  PT:=GetTypeData(TypeInfo);
+  if (Value>=PT^.MinValue) and (Value<=PT^.MaxValue) then
+    Result:=GetEnumName(TypeInfo,Value)
+  else if AllowOutOfRange then
+    Result:=TypeInfo^.Name+'('+IntToStr(Value)+')'
+  else
+    raise EStreamError.Create('enum '+IntToStr(Value)+' is out of range of type "'+TypeInfo^.Name+'"');
 end;
 
 constructor TCompWriterPas.Create(AStream: TStream);
@@ -1239,7 +1818,7 @@ var
 begin
   AComponent:=TCompBaseTypes.Create(nil);
   try
-    AComponent.Name:=AComponent.ClassName+'1';
+    AComponent.Name:=CreateRootName(AComponent);
     TestWriteDescendant('TestBaseTypesSkipDefaultValue',AComponent,nil,[
     ]);
   finally
@@ -1254,7 +1833,7 @@ begin
   AComponent:=TCompBaseTypesCustomStored.Create(nil);
   try
     with AComponent do begin
-      Name:=AComponent.ClassName+'1';
+      Name:=CreateRootName(AComponent);
       AByte:=0;
       DefAByte:=AByte+1;
       AShortInt:=0;
@@ -1277,11 +1856,21 @@ begin
       DefASingle:=ASingle+1;
       ADouble:=0;
       DefADouble:=ADouble+1;
+      // ToDo: extended
       AChar:=#0;
       DefAChar:=succ(AChar);
       AWideChar:=#0;
       DefAWideChar:=succ(AWideChar);
-      // ToDo: extended
+      Enum:=TEnum(0);
+      DefEnum:=succ(Enum);
+      EnumRg:=TEnumRg(0);
+      DefEnumRg:=succ(EnumRg);
+      SetOfEnum:=[];
+      DefSetOfEnum:=[red];
+      SetOfEnumRg:=[];
+      DefSetOfEnumRg:=[red];
+      Event:=nil;
+      DefEvent:=@OnClick;
     end;
     TestWriteDescendant('TestBaseTypesZeroes',AComponent,nil,[
     'AByte:=0;',
@@ -1295,6 +1884,11 @@ begin
     'ADouble:= 0.0;',
     'AChar:=#0;',
     'AWideChar:=#0;',
+    'Enum:=red;',
+    'EnumRg:=TEnumRg(0);',
+    'SetOfEnum:=[];',
+    'SetOfEnumRg:=[];',
+    //'Event:=nil;', must not be written
     '']);
   finally
     AComponent.Free;
@@ -1308,7 +1902,7 @@ begin
   AComponent:=TCompBaseTypesCustomStored.Create(nil);
   try
     with AComponent do begin
-      Name:=AComponent.ClassName+'1';
+      Name:=CreateRootName(AComponent);
       ABoolean:=low(boolean);
       DefABoolean:=not ABoolean;
       AByteBool:=boolean(low(byte));
@@ -1339,11 +1933,21 @@ begin
       DefASingle:=ASingle+1;
       ADouble:=MinSafeIntDouble;
       DefADouble:=ADouble+1;
+      // ToDo: extended
       AChar:=low(char);
       DefAChar:=succ(AChar);
       AWideChar:=low(WideChar);
       DefAWideChar:=succ(AWideChar);
-      // ToDo: extended
+      Enum:=low(TEnum);
+      DefEnum:=succ(Enum);
+      EnumRg:=low(TEnumRg);
+      DefEnumRg:=succ(EnumRg);
+      SetOfEnum:=[];
+      DefSetOfEnum:=[red];
+      SetOfEnumRg:=[];
+      DefSetOfEnumRg:=[red];
+      Event:=@OnClick;
+      DefEvent:=nil;
     end;
     TestWriteDescendant('TestBaseTypesMinValues',AComponent,nil,[
     'ABoolean:=False;',
@@ -1362,6 +1966,11 @@ begin
     'ADouble:=-4.503599627370496E15;',
     'AChar:=#0;',
     'AWideChar:=#0;',
+    'Enum:=red;',
+    'EnumRg:=green;',
+    'SetOfEnum:=[];',
+    'SetOfEnumRg:=[];',
+    'Event:=@OnClick;',
     '']);
   finally
     AComponent.Free;
@@ -1375,7 +1984,7 @@ begin
   AComponent:=TCompBaseTypesCustomStored.Create(nil);
   try
     with AComponent do begin
-      Name:=AComponent.ClassName+'1';
+      Name:=CreateRootName(AComponent);
       ABoolean:=high(boolean);
       DefABoolean:=not ABoolean;
       AByteBool:=boolean(high(byte));
@@ -1406,11 +2015,19 @@ begin
       DefASingle:=ASingle-1;
       ADouble:=MaxSafeIntDouble;
       DefADouble:=ADouble-1;
+      // ToDo: extended
       AChar:=high(char);
       DefAChar:=pred(AChar);
       AWideChar:=high(WideChar);
       DefAWideChar:=pred(AWideChar);
-      // ToDo: extended
+      Enum:=high(TEnum);
+      DefEnum:=pred(Enum);
+      EnumRg:=high(TEnumRg);
+      DefEnumRg:=pred(EnumRg);
+      SetOfEnum:=[low(SetOfEnum)..high(SetOfEnum)];
+      DefSetOfEnum:=[red];
+      SetOfEnumRg:=[low(SetOfEnumRg)..high(SetOfEnumRg)];
+      DefSetOfEnumRg:=[red];
     end;
     TestWriteDescendant('TestBaseTypesMaxValues',AComponent,nil,[
     'ABoolean:=True;',
@@ -1430,6 +2047,10 @@ begin
     'ADouble:=4.503599627370495E15;',
     'AChar:=#255;',
     'AWideChar:=#65535;',
+    'Enum:=black;',
+    'EnumRg:=white;',
+    'SetOfEnum:=[red..black];',
+    'SetOfEnumRg:=[green..white];',
     '']);
   finally
     AComponent.Free;
@@ -1443,11 +2064,13 @@ begin
   AComponent:=TCompBaseTypes.Create(nil);
   try
     with AComponent do begin
-      Name:=AComponent.ClassName+'1';
+      Name:=CreateRootName(AComponent);
       AString:=#9'A'#13#10;
+      AShortString:=#9'A'#13#10;
     end;
     TestWriteDescendant('TestStringASCII',AComponent,nil,[
-    'AString:=#9''A''#13#10;']);
+    'AString:=#9''A''#13#10;',
+    'AShortString:=#9''A''#13#10;']);
   finally
     AComponent.Free;
   end;
@@ -1460,7 +2083,7 @@ begin
   AComponent:=TCompBaseTypes.Create(nil);
   try
     with AComponent do begin
-      Name:=AComponent.ClassName+'1';
+      Name:=CreateRootName(AComponent);
       AString:='äöü';
       AShortString:='äöü';
     end;
@@ -1480,7 +2103,7 @@ begin
   AComponent:=TCompBaseTypes.Create(nil);
   try
     with AComponent do begin
-      Name:=AComponent.ClassName+'1';
+      Name:=CreateRootName(AComponent);
       AWideString:=UTF8ToUTF16('äAöü');
       AUnicodeString:=UTF8ToUTF16('äöBCü');
     end;
@@ -1501,7 +2124,7 @@ begin
   AComponent:=TCompBaseTypes.Create(nil);
   try
     with AComponent do begin
-      Name:=AComponent.ClassName+'1';
+      Name:=CreateRootName(AComponent);
       AWideString:=UTF8ToUTF16('äöü');
       AUnicodeString:=UTF8ToUTF16('äöü');
     end;
@@ -1511,6 +2134,194 @@ begin
     '']);
   finally
     AComponent.Free;
+  end;
+end;
+
+procedure TTestCompReaderWriterPas.TestVariant;
+var
+  AComponent: TCompVariants;
+begin
+  Writer.Options:=Writer.Options+[cwpoSrcCodepageUTF8];
+  AComponent:=TCompVariants.Create(nil);
+  try
+    with AComponent do begin
+      Name:=CreateRootName(AComponent);
+      V1:=high(byte);
+      V2:=low(ShortInt);
+      V3:=high(Word);
+      V4:=low(SmallInt);
+      V5:=high(LongWord);
+      V6:=low(LongInt);
+      V7:=high(QWord);
+      V8:=low(int64);
+      V9:=true;
+      V10:='äöü';
+      V11:=single(-1.25);
+      V12:=double(1.5);
+      V13:=currency(17.0001);
+    end;
+    TestWriteDescendant('TestVariant',AComponent,nil,[
+    'V1:=Byte(255);',
+    'V2:=ShortInt(-128);',
+    'V3:=Word(65535);',
+    'V4:=SmallInt(-32768);',
+    'V5:=LongWord(4294967295);',
+    'V6:=LongInt(-2147483648);',
+    'V7:=QWord(18446744073709551615);',
+    'V8:=Int64(-9223372036854775808);',
+    'V9:=True;',
+    'V10:=''äöü'';',
+    'V11:=Double(-1.25);',
+    'V12:=Double(1.5);',
+    'V13:=Currency(1.70001E1);',
+    '']);
+  finally
+    AComponent.Free;
+  end;
+end;
+
+procedure TTestCompReaderWriterPas.TestPropPersistent;
+var
+  aRoot: TCompPropPersistent;
+begin
+  aRoot:=TCompPropPersistent.Create(nil);
+  try
+    with aRoot do begin
+      Name:=CreateRootName(aRoot);
+      Before:=1;
+      Sub:=TPersistentSimple.Create;
+      Sub.Size:=11;
+      Middle:=2;
+      Sub2:=TPersistentSimple.Create;
+      Sub2.Size:=21;
+      Sub2.Sub:=TPersistentSimple.Create;
+      Sub2.Sub.Size:=211;
+      After:=3;
+    end;
+    TestWriteDescendant('TestPropPersistent',aRoot,nil,[
+    'Before:=1;',
+    'Sub.Size:=11;',
+    'Middle:=2;',
+    'Sub2.Size:=21;',
+    'Sub2.Sub.Size:=211;',
+    'After:=3;',
+    '']);
+  finally
+    FreeAndNil(aRoot.FSub2.FSub);
+    FreeAndNil(aRoot.FSub2);
+    FreeAndNil(aRoot.FSub);
+    aRoot.Free;
+  end;
+end;
+
+procedure TTestCompReaderWriterPas.TestAncestor;
+
+  procedure InitAncestor(C: TSimpleControl);
+  var
+    Button1: TSimpleControl;
+  begin
+    C.Tag:=1;
+    Button1:=TSimpleControl.Create(C);
+    with Button1 do begin
+      Name:='Button1';
+      Tag:=2;
+      OnClick:=@C.OnA;
+      Parent:=C;
+    end;
+  end;
+
+var
+  aRoot, Ancestor: TSimpleControl;
+begin
+  Ancestor:=TSimpleControl.Create(nil);
+  aRoot:=TSimpleControl.Create(nil);
+  try
+    with Ancestor do begin
+      Name:='Ancestor';
+    end;
+    InitAncestor(Ancestor);
+
+    with aRoot do begin
+      Name:='Descendant';
+    end;
+    InitAncestor(aRoot);
+
+    TestWriteDescendant('TestAncestor',aRoot,Ancestor,[
+    'with Button1 do begin',
+    'end;',
+    '']);
+  finally
+    aRoot.Free;
+    Ancestor.Free;
+  end;
+end;
+
+procedure TTestCompReaderWriterPas.TestChildComponent;
+var
+  aRoot, Button1: TSimpleControl;
+begin
+  aRoot:=TSimpleControl.Create(nil);
+  try
+    with aRoot do begin
+      Name:=CreateRootName(aRoot);
+      Tag:=1;
+    end;
+    Button1:=TSimpleControl.Create(aRoot);
+    with Button1 do begin
+      Name:='Button1';
+      Tag:=2;
+      Parent:=aRoot;
+    end;
+
+    TestWriteDescendant('TestChildComponent',aRoot,nil,[
+    'Tag:=1;',
+    'Button1:=TSimpleControl.Create(Self);',
+    'with Button1 do begin',
+    '  Name:=''Button1'';',
+    '  Tag:=2;',
+    '  Parent:=Self;',
+    'end;',
+    '']);
+  finally
+    aRoot.Free;
+  end;
+end;
+
+procedure TTestCompReaderWriterPas.TestCollection;
+var
+  aRoot: TSimpleControlWithCollection;
+begin
+  aRoot:=TSimpleControlWithCollection.Create(nil);
+  try
+    with aRoot do begin
+      Name:=CreateRootName(aRoot);
+      Tag:=1;
+      with TSimpleCollectionItem(Items.Add) do begin
+        OnClick:=@OnA;
+        Sub:=TPersistentSimple.Create;
+        Sub.Size:=11;
+      end;
+      with TSimpleCollectionItem(Items.Add) do begin
+        Sub:=TPersistentSimple.Create;
+        Sub.Size:=12;
+      end;
+    end;
+
+    TestWriteDescendant('TestCollection',aRoot,nil,[
+    'Tag:=1;',
+    'Items.Clear;',
+    'with TSimpleCollectionItem(Items.Add) do begin',
+    '  Sub.Size:=11;',
+    '  OnClick:=@OnA;',
+    'end;',
+    'with TSimpleCollectionItem(Items.Add) do begin',
+    '  Sub.Size:=12;',
+    'end;',
+    '']);
+  finally
+    FreeAndNil(aRoot.Items[0].FSub);
+    FreeAndNil(aRoot.Items[1].FSub);
+    aRoot.Free;
   end;
 end;
 

@@ -434,7 +434,7 @@ type
                                  out ListOfPCodeXYPosition: TFPList;
                                  SkipAbstractsInStartClass: boolean = false): boolean;
     function GetValuesOfCaseVariable(const CursorPos: TCodeXYPosition;
-                                     List: TStrings; WithTypeDefIfScoped: boolean): boolean;
+                                     List: TStrings; WithTypeDefIfScoped: boolean = true): boolean;
     property Beautifier: TBeautifyCodeOptions read FBeautifier write FBeautifier;
 
     procedure CalcMemSize(Stats: TCTMemStats); override;
@@ -3523,7 +3523,10 @@ begin
       if UpAtomIs('CASE') then
         CaseAtom:=CurPos
     until (CurPos.EndPos>SrcLen) or (CurPos.EndPos>CleanCursorPos);
-    if CaseAtom.StartPos<1 then exit;
+    if CaseAtom.StartPos<1 then begin
+      debugln(['TIdentCompletionTool.GetValuesOfCaseVariable "case" not found']);
+      exit;
+    end;
 
     // find case variable
     EndPos:=FindEndOfExpression(CaseAtom.EndPos);
