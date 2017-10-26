@@ -14,22 +14,22 @@ Working:
 - variant: integers, boolean, string, floats, currency
 - method
 - persistent
-- component children
+- component children, use SetParentComponent or optional Parent:=
 - collection
 - with ancestor
 - ancestor: change ComponentIndex -> call SetChildPos
 - reference foreign root, reference foreign component
+- create components before setting properties to avoid having to set references
+  later
+- inline component, csInline, call SetInline, inherited inline, inline on inherited
 
 ToDo:
 - enum: add unit, avoid nameclash with-do
 - custom integer TColor, add unit, avoid nameclash with-do
 - method, avoid nameclash with-do
-- reference not yet created child component -> delay property setter
-- inline component
 - TComponent.Left/Right
 - DefineProperties
 - tkInterface
-- optional: use SetParentComponent instead of Parent:=
 - insert/update code and helper class into unit/program
 }
 unit TestCompReaderWriterPas;
@@ -42,7 +42,8 @@ interface
 
 uses
   Classes, SysUtils, typinfo, RtlConsts, LazLoggerBase, LazUTF8, fpcunit,
-  testregistry, CodeToolManager, LinkScanner, TestStdCodetools, variants;
+  testregistry, CodeToolManager, LinkScanner, CodeToolsStructs,
+  TestStdCodetools, variants;
 
 const
   CSPDefaultSignature = '// Pascal stream V1.0';
@@ -52,6 +53,8 @@ type
     const Name: string; var Ancestor, RootAncestor: TComponent) of object;
   TCWPGetMethodName = procedure(Sender: TObject; Instance: TPersistent;
     PropInfo: PPropInfo; out Name: String) of object;
+  TCWPGetParentProperty = procedure(Sender: TObject; Component: TComponent;
+    var PropName: string) of object;
 
   TCWPOption = (
     cwpoNoSignature,
@@ -59,6 +62,11 @@ type
     cwpoSrcCodepageUTF8
     );
   TCWPOptions = set of TCWPOption;
+
+  TCWPChildrenStep = (
+    cwpcsCreate,
+    cwpcsProperties
+  );
 
   { TCompWriterPas }
 
@@ -71,6 +79,7 @@ type
     FLineEnding: string;
     FNeedAccessClass: boolean;
     FOnGetMethodName: TCWPGetMethodName;
+    FOnGetParentProperty: TCWPGetParentProperty;
     FOptions: TCWPOptions;
     FParent: TComponent;
     FPropPath: string;
@@ -87,16 +96,16 @@ type
     FOnFindAncestor: TCWPFindAncestorEvent;
     procedure AddToAncestorList(Component: TComponent);
     procedure DetermineAncestor(Component: TComponent);
-    procedure DoFindAncestor(Component: TComponent);
     procedure SetRoot(const AValue: TComponent);
     procedure WriteComponentData(Instance: TComponent);
-    procedure WriteChildren(Component: TComponent);
+    procedure WriteChildren(Component: TComponent; Step: TCWPChildrenStep);
     procedure WriteProperty(Instance: TPersistent; PropInfo: PPropInfo);
     procedure WriteProperties(Instance: TPersistent);
     procedure WriteCollection(PropName: string; Collection: TCollection);
     function GetComponentPath(Component: TComponent): string;
     function GetBoolLiteral(b: boolean): string;
     function GetCharLiteral(c: integer): string;
+    function GetWideCharLiteral(c: integer): string;
     function GetStringLiteral(const s: string): string;
     function GetWStringLiteral(p: PWideChar; Count: integer): string;
     function GetFloatLiteral(const e: Extended): string;
@@ -107,13 +116,16 @@ type
   public
     constructor Create(AStream: TStream);
     destructor Destroy; override;
+    procedure WriteComponentCreate(Component: TComponent);
     procedure WriteComponent(Component: TComponent);
     procedure WriteDescendant(ARoot: TComponent; AAncestor: TComponent = nil);
     procedure WriteSignature;
     procedure WriteIndent;
     procedure Write(const s: string);
     procedure WriteLn;
+    procedure WriteStatement(const s: string);
     procedure WriteAssign(const LHS, RHS: string);
+    function CreatedByAncestor(Component: TComponent): boolean;
     procedure Indent;
     procedure Unindent;
     property Stream: TStream read FStream;
@@ -137,6 +149,7 @@ type
     property AccessClass: string read FAccessClass
       write FAccessClass; // classname used to access protected TComponent members like SetChildOrder
     property NeedAccessClass: boolean read FNeedAccessClass write FNeedAccessClass; // some property needed AccessClass
+    property OnGetParentProperty: TCWPGetParentProperty read FOnGetParentProperty write FOnGetParentProperty;
   end;
 
 // Tests =======================================================================
@@ -526,6 +539,11 @@ type
   private
     FStream: TMemoryStream;
     FWriter: TCompWriterPas;
+    FAncestors: TPointerToPointerTree;
+    procedure OnWriterFindAncestor(Sender: TObject; Component: TComponent;
+      const Name: string; var Ancestor, RootAncestor: TComponent);
+    procedure OnWriterGetParentProperty(Sender: TObject; Component: TComponent;
+      var PropName: string);
   protected
     procedure SetUp; override;
     procedure TearDown; override;
@@ -533,6 +551,10 @@ type
     procedure TestWriteDescendant(Msg: string; Component: TComponent;
       Ancestor: TComponent; const Expected: array of string; NeedAccessClass: boolean = false);
     property Writer: TCompWriterPas read FWriter write FWriter;
+  public
+    constructor Create; override;
+    destructor Destroy; override;
+    procedure AddAncestor(Component, Ancestor: TComponent);
   published
     procedure TestBaseTypesSkipDefaultValue;
     procedure TestBaseTypesZeroes;
@@ -546,9 +568,12 @@ type
     procedure TestPropPersistent;
     procedure TestAncestor;
     procedure TestAncestorChildPos;
-    procedure TestChildComponent;
+    procedure TestChildComponents;
     procedure TestForeignReference;
     procedure TestCollection;
+    procedure TestInline;
+    procedure TestAncestorWithInline; // e.g. a Form inherited from a Form with a Frame
+    procedure TestInlineDescendant; // e.g. a Form with a Frame, Frame is inherited from another Frame
   end;
 
 implementation
@@ -948,27 +973,23 @@ end;
 procedure TCompWriterPas.DetermineAncestor(Component: TComponent);
 var
   i : Integer;
-begin
-  if not Assigned(FAncestors) then
-    exit;
-  i:=FAncestors.IndexOf(Component.Name);
-  if i<0 then
-  begin
-    FAncestor:=nil;
-    FAncestorPos:=-1;
-  end
-  else
-    With TPosComponent(FAncestors.Objects[i]) do
-    begin
-      FAncestor:=FComponent;
-      FAncestorPos:=FPos;
-    end;
-end;
-
-procedure TCompWriterPas.DoFindAncestor(Component: TComponent);
-var
   C: TComponent;
 begin
+  if Assigned(FAncestors) then
+  begin
+    i:=FAncestors.IndexOf(Component.Name);
+    if i<0 then
+    begin
+      FAncestor:=nil;
+      FAncestorPos:=-1;
+    end
+    else
+      With TPosComponent(FAncestors.Objects[i]) do
+      begin
+        FAncestor:=FComponent;
+        FAncestorPos:=FPos;
+      end;
+  end;
   if Assigned(FOnFindAncestor) then
     if (Ancestor=Nil) or (Ancestor is TComponent) then
     begin
@@ -989,29 +1010,38 @@ var
   HasAncestor: Boolean;
 
   procedure WriteSetParent;
+  var
+    PropName: String;
   begin
-    if HasAncestor then
-      exit; // descendants cannot change parent
     if Parent=nil then exit;
     if Instance.GetParentComponent=nil then exit;
-    WriteAssign('Parent',GetComponentPath(Parent));
+    if CreatedByAncestor(Instance) then begin
+      // ancestor creates the component
+      // and descendants cannot change parent
+      exit;
+    end;
+    PropName:='';
+    if Assigned(OnGetParentProperty) then
+      OnGetParentProperty(Self,Instance,PropName);
+    if PropName<>'' then
+      WriteAssign(PropName,GetComponentPath(Parent))
+    else begin
+      NeedAccessClass:=true;
+      WriteStatement(AccessClass+'(TComponent('+Instance.Name+')).SetParentComponent('+GetComponentPath(Parent)+');');
+    end;
   end;
 
 begin
   HasAncestor := Assigned(Ancestor) and ((Instance = Root) or
     (Instance.ClassType = Ancestor.ClassType));
-  if Instance=LookupRoot then
-    WriteAssign('Name',''''+Instance.Name+'''')
+  if Instance=LookupRoot then begin
+    WriteAssign('Name',''''+Instance.Name+'''');
+    WriteChildren(Instance,cwpcsCreate);
+  end
   else begin
-    if not HasAncestor then
-      WriteAssign(Instance.Name,Instance.ClassName+'.Create(Self)');
-    WriteIndent;
-    Write('with ');
-    Write(Instance.Name);
-    Write(' do begin');
-    WriteLn;
+    WriteStatement('with '+Instance.Name+' do begin');
     Indent;
-    if not HasAncestor then
+    if not CreatedByAncestor(Instance) then
       WriteAssign('Name',''''+Instance.Name+'''');
     if cwpoSetParentFirst in Options then
       WriteSetParent;
@@ -1020,28 +1050,27 @@ begin
   if not (cwpoSetParentFirst in Options) then
     WriteSetParent;
   if not IgnoreChildren then
-    WriteChildren(Instance);
+    WriteChildren(Instance,cwpcsProperties);
   if Instance<>LookupRoot then
   begin
     Unindent;
-    WriteIndent;
-    Write('end;');
-    WriteLn;
+    WriteStatement('end;');
   end;
-  if HasAncestor and (FCurrentPos<>FAncestorPos) then
+  if HasAncestor and (Ancestor<>FRootAncestor)
+      and (FCurrentPos<>FAncestorPos) then
   begin
-    WriteIndent;
     if Parent=LookupRoot then
-      Write('SetChildOrder('+GetComponentPath(Instance)+','+IntToStr(FCurrentPos)+');')
+      WriteStatement('SetChildOrder('+GetComponentPath(Instance)+','+IntToStr(FCurrentPos)+');')
     else begin
       NeedAccessClass:=true;
-      Write(AccessClass+'('+GetComponentPath(Parent)+').SetChildOrder('+GetComponentPath(Instance)+','+IntToStr(FCurrentPos)+');');
+      WriteStatement(AccessClass+'(TComponent('+GetComponentPath(Parent)+')).SetChildOrder('+GetComponentPath(Instance)+','+IntToStr(FCurrentPos)+');');
     end;
-    WriteLn;
   end;
+  Inc(FCurrentPos);
 end;
 
-procedure TCompWriterPas.WriteChildren(Component: TComponent);
+procedure TCompWriterPas.WriteChildren(Component: TComponent;
+  Step: TCWPChildrenStep);
 var
   SRoot, SRootA, SParent: TComponent;
   SList: TStringList;
@@ -1072,7 +1101,12 @@ begin
       FAncestors.Sorted:=True;
     end;
     try
-      TAccessComp(Component).GetChildren(@WriteComponent, FRoot);
+      case Step of
+      cwpcsCreate:
+        TAccessComp(Component).GetChildren(@WriteComponentCreate, FRoot);
+      cwpcsProperties:
+        TAccessComp(Component).GetChildren(@WriteComponent, FRoot);
+      end;
     finally
       if Assigned(FAncestor) then
         for i:=0 to FAncestors.Count-1 do
@@ -1115,13 +1149,13 @@ begin
   if not Assigned(PropInfo^.GetProc) then
     exit;
 
-  // properties without setter are only allowed, if they are subcomponents
+  // properties without setter are only allowed, if they are csSubComponent
   PropType := PropInfo^.PropType;
   if not Assigned(PropInfo^.SetProc) then begin
     if PropType^.Kind<>tkClass then
       exit;
     ObjValue := TObject(GetObjectProp(Instance, PropInfo));
-    if not ObjValue.InheritsFrom(TComponent) or
+    if not (ObjValue is TComponent) or
        not (csSubComponent in TComponent(ObjValue).ComponentStyle) then
       exit;
   end;
@@ -1130,7 +1164,9 @@ begin
   HasAncestor := Assigned(Ancestor) and ((Instance = Root) or
     (Instance.ClassType = Ancestor.ClassType));
   PropName:=FPropPath + PropInfo^.Name;
+  {$IFDEF VerboseCompWriterPas}
   debugln(['TWriter.WriteProperty PropName="',PropName,'" TypeName=',PropType^.Name,' Kind=',GetEnumName(TypeInfo(TTypeKind),ord(PropType^.Kind)),' HasAncestor=',HasAncestor]);
+  {$ENDIF}
 
   case PropType^.Kind of
     tkInteger, tkChar, tkEnumeration, tkSet, tkWChar:
@@ -1165,17 +1201,7 @@ begin
             tkChar:
               WriteAssign(PropName,GetCharLiteral(Int32Value));
             tkWChar:
-              case Int32Value of
-              32..126:
-                WriteAssign(PropName,''''+Chr(Int32Value)+'''');
-              0..31,127..255,$D800..$DFFF:
-                WriteAssign(PropName,'#'+IntToStr(Int32Value));
-              else
-                if cwpoSrcCodepageUTF8 in Options then
-                  WriteAssign(PropName,''''+UTF16ToUTF8(WideChar(Int32Value))+'''')
-                else
-                  WriteAssign(PropName,'#'+IntToStr(Int32Value));
-              end;
+              WriteAssign(PropName,GetWideCharLiteral(Int32Value));
             tkSet:
               begin
               s:='';
@@ -1496,21 +1522,15 @@ var
   i: Integer;
   Item: TCollectionItem;
 begin
-  WriteIndent;
-  Write(PropName+'.Clear;');
-  WriteLn;
+  WriteStatement(PropName+'.Clear;');
   for i:=0 to Collection.Count-1 do
   begin
     Item:=Collection.Items[i];
-    WriteIndent;
-    Write('with '+Item.ClassName+'('+PropName+'.Add) do begin');
-    WriteLn;
+    WriteStatement('with '+Item.ClassName+'('+PropName+'.Add) do begin');
     Indent;
     WriteProperties(Item);
     Unindent;
-    WriteIndent;
-    Write('end;');
-    WriteLn;
+    WriteStatement('end;');
   end;
 end;
 
@@ -1537,6 +1557,21 @@ begin
   case c of
   32..126: Result:=''''+chr(c)+'''';
   else     Result:='#'+IntToStr(c);
+  end;
+end;
+
+function TCompWriterPas.GetWideCharLiteral(c: integer): string;
+begin
+  case c of
+  32..126:
+    Result:=''''+Chr(c)+'''';
+  0..31,127..255,$D800..$DFFF:
+    Result:='#'+IntToStr(c);
+  else
+    if cwpoSrcCodepageUTF8 in Options then
+      Result:=''''+UTF16ToUTF8(WideChar(c))+''''
+    else
+      Result:='#'+IntToStr(c);
   end;
 end;
 
@@ -1752,6 +1787,44 @@ begin
   inherited Destroy;
 end;
 
+procedure TCompWriterPas.WriteComponentCreate(Component: TComponent);
+var
+  OldAncestor: TPersistent;
+  OldRoot, OldRootAncestor: TComponent;
+  HasAncestor: boolean;
+begin
+  if (Component=LookupRoot) then exit;
+  OldRoot:=FRoot;
+  OldAncestor:=FAncestor;
+  OldRootAncestor:=FRootAncestor;
+  Try
+    DetermineAncestor(Component);
+    HasAncestor:=FAncestor is TComponent;
+    if not CreatedByAncestor(Component) then
+      WriteAssign(Component.Name,Component.ClassName+'.Create(Self)');
+    if HasAncestor then begin
+      if (csInline in Component.ComponentState)
+      and not (csInline in TComponent(Ancestor).ComponentState) then
+      begin
+        NeedAccessClass:=true;
+        WriteStatement(AccessClass+'(TComponent('+Component.Name+')).SetInline('+GetBoolLiteral(true)+');');
+      end;
+      if (csAncestor in Component.ComponentState)
+      and not (csAncestor in TComponent(Ancestor).ComponentState) then
+      begin
+        NeedAccessClass:=true;
+        WriteStatement(AccessClass+'(TComponent('+Component.Name+')).SetAncestor('+GetBoolLiteral(true)+');');
+      end;
+    end;
+    if not IgnoreChildren then
+      WriteChildren(Component,cwpcsCreate);
+  finally
+    FAncestor:=OldAncestor;
+    FRoot:=OldRoot;
+    FRootAncestor:=OldRootAncestor;
+  end;
+end;
+
 procedure TCompWriterPas.WriteComponent(Component: TComponent);
 var
   OldAncestor : TPersistent;
@@ -1763,7 +1836,6 @@ begin
   Try
     // Component.ComponentState:=Component.FComponentState+[csWriting];
     DetermineAncestor(Component);
-    DoFindAncestor(Component); // Mainly for IDE when a parent form had an ancestor renamed...
     WriteComponentData(Component);
   finally
     FAncestor:=OldAncestor;
@@ -1786,9 +1858,7 @@ end;
 
 procedure TCompWriterPas.WriteSignature;
 begin
-  WriteIndent;
-  Write(Signature);
-  WriteLn;
+  WriteStatement(Signature);
 end;
 
 procedure TCompWriterPas.WriteIndent;
@@ -1807,6 +1877,13 @@ begin
   Write(LineEnding);
 end;
 
+procedure TCompWriterPas.WriteStatement(const s: string);
+begin
+  WriteIndent;
+  Write(s);
+  WriteLn;
+end;
+
 procedure TCompWriterPas.WriteAssign(const LHS, RHS: string);
 begin
   WriteIndent;
@@ -1815,6 +1892,14 @@ begin
   Write(RHS);
   Write(';');
   WriteLn;
+end;
+
+function TCompWriterPas.CreatedByAncestor(Component: TComponent): boolean;
+begin
+  Result:=(FAncestor is TComponent)
+    and (TComponent(FAncestor).Owner = FRootAncestor)
+    and (Component.Owner = Root)
+    and SameText(Component.Name,TComponent(FAncestor).Name)
 end;
 
 procedure TCompWriterPas.Indent;
@@ -1879,15 +1964,39 @@ end;
 
 { TTestCompReaderWriterPas }
 
+procedure TTestCompReaderWriterPas.OnWriterFindAncestor(Sender: TObject;
+  Component: TComponent; const Name: string; var Ancestor,
+  RootAncestor: TComponent);
+var
+  C: TComponent;
+begin
+  if Name='' then ;
+  C:=TComponent(FAncestors[Component]);
+  if C=nil then exit;
+  Ancestor:=C;
+  if C.Owner=nil then
+    RootAncestor:=C;
+end;
+
+procedure TTestCompReaderWriterPas.OnWriterGetParentProperty(Sender: TObject;
+  Component: TComponent; var PropName: string);
+begin
+  if Component is TSimpleControl then
+    PropName:='Parent';
+end;
+
 procedure TTestCompReaderWriterPas.SetUp;
 begin
   inherited SetUp;
   FStream:=TMemoryStream.Create;
   FWriter:=TCompWriterPas.Create(FStream);
+  FWriter.OnFindAncestor:=@OnWriterFindAncestor;
+  FWriter.OnGetParentProperty:=@OnWriterGetParentProperty;
 end;
 
 procedure TTestCompReaderWriterPas.TearDown;
 begin
+  FAncestors.Clear;
   FreeAndNil(FWriter);
   FreeAndNil(FStream);
   inherited TearDown;
@@ -1919,6 +2028,23 @@ begin
     ExpS:=ExpS+s+LineEnding;
   CheckDiff(Msg,ExpS,Actual);
   AssertEquals(Msg+' NeedAccessClass',NeedAccessClass,Writer.NeedAccessClass);
+end;
+
+constructor TTestCompReaderWriterPas.Create;
+begin
+  inherited Create;
+  FAncestors:=TPointerToPointerTree.Create;
+end;
+
+destructor TTestCompReaderWriterPas.Destroy;
+begin
+  FreeAndNil(FAncestors);
+  inherited Destroy;
+end;
+
+procedure TTestCompReaderWriterPas.AddAncestor(Component, Ancestor: TComponent);
+begin
+  FAncestors[Component]:=Ancestor;
 end;
 
 procedure TTestCompReaderWriterPas.TestBaseTypesSkipDefaultValue;
@@ -2469,13 +2595,15 @@ begin
     'with Panel2 do begin',
     '  with Button22 do begin',
     '  end;',
-    '  TPasStreamAccess(Panel2).SetChildOrder(Button22,0);',
+    '  TPasStreamAccess(TComponent(Panel2)).SetChildOrder(Button22,0);',
     '  with Button21 do begin',
     '  end;',
+    '  TPasStreamAccess(TComponent(Panel2)).SetChildOrder(Button21,1);',
     'end;',
     'SetChildOrder(Panel2,0);',
     'with Button1 do begin',
     'end;',
+    'SetChildOrder(Button1,1);',
     ''],true);
   finally
     aRoot.Free;
@@ -2483,7 +2611,7 @@ begin
   end;
 end;
 
-procedure TTestCompReaderWriterPas.TestChildComponent;
+procedure TTestCompReaderWriterPas.TestChildComponents;
 var
   aRoot, Button1, Panel1: TSimpleControl;
 begin
@@ -2507,13 +2635,13 @@ begin
     end;
 
     TestWriteDescendant('TestChildComponent',aRoot,nil,[
-    'Tag:=1;',
     'Panel1:=TSimpleControl.Create(Self);',
+    'Button1:=TSimpleControl.Create(Self);',
+    'Tag:=1;',
     'with Panel1 do begin',
     '  Name:=''Panel1'';',
     '  Tag:=2;',
     '  Parent:=Self;',
-    '  Button1:=TSimpleControl.Create(Self);',
     '  with Button1 do begin',
     '    Name:=''Button1'';',
     '    Tag:=3;',
@@ -2559,9 +2687,9 @@ begin
     Button1.Next:=Button2;
 
     TestWriteDescendant('TestForeignReference',aRoot,nil,[
+    'Button1:=TSimpleControl.Create(Self);',
     'Tag:=11;',
     'Next:=OtherRoot;',
-    'Button1:=TSimpleControl.Create(Self);',
     'with Button1 do begin',
     '  Name:=''Button1'';',
     '  Tag:=12;',
@@ -2610,6 +2738,281 @@ begin
     FreeAndNil(aRoot.Items[0].FSub);
     FreeAndNil(aRoot.Items[1].FSub);
     aRoot.Free;
+  end;
+end;
+
+procedure TTestCompReaderWriterPas.TestInline;
+
+  procedure InitFrame(Frame: TSimpleControl);
+  var
+    FrameButton1: TSimpleControl;
+  begin
+    with Frame do begin
+      Tag:=12;
+      FrameButton1:=TSimpleControl.Create(Frame);
+      with FrameButton1 do begin
+        Name:='FrameButton1';
+        Tag:=123;
+        Parent:=Frame;
+      end;
+    end;
+  end;
+
+var
+  aRoot, Button1, Frame1, AncestorFrame: TSimpleControl;
+begin
+  // e.g. a form with a frame
+  // the form has no ancestor
+  // the frame has an ancestor
+  aRoot:=TSimpleControl.Create(nil);
+  AncestorFrame:=TSimpleControl.Create(nil);
+  try
+    AncestorFrame.Name:='AncestorFrame';
+    InitFrame(AncestorFrame);
+
+    with aRoot do begin
+      Name:=CreateRootName(aRoot);
+      Tag:=1;
+    end;
+    Button1:=TSimpleControl.Create(aRoot);
+    with Button1 do begin
+      Name:='Button1';
+      Parent:=aRoot;
+    end;
+    Frame1:=TSimpleControl.Create(aRoot);
+    TAccessComp(TComponent(Frame1)).SetInline(true);
+    InitFrame(Frame1);
+    with Frame1 do begin
+      Name:='Frame1';
+      Parent:=aRoot;
+    end;
+
+    AddAncestor(Frame1,AncestorFrame);
+    TestWriteDescendant('TestInline',aRoot,nil,[
+    'Button1:=TSimpleControl.Create(Self);',
+    'Frame1:=TSimpleControl.Create(Self);',
+    CSPDefaultAccessClass+'(TComponent(Frame1)).SetInline(True);',
+    'Tag:=1;',
+    'with Button1 do begin',
+    '  Name:=''Button1'';',
+    '  Parent:=Self;',
+    'end;',
+    'with Frame1 do begin',
+    '  Name:=''Frame1'';',
+    '  Parent:=Self;',
+    '  with FrameButton1 do begin',
+    '  end;',
+    'end;',
+    ''],true);
+  finally
+    AncestorFrame.Free;
+    aRoot.Free;
+  end;
+end;
+
+procedure TTestCompReaderWriterPas.TestAncestorWithInline;
+
+  procedure InitFrame(Frame: TSimpleControl);
+  var
+    FrameButton1, FrameButton2: TSimpleControl;
+  begin
+    with Frame do begin
+      Tag:=1;
+      FrameButton1:=TSimpleControl.Create(Frame);
+      with FrameButton1 do begin
+        Name:='FrameButton1';
+        Tag:=11;
+        Parent:=Frame;
+      end;
+      FrameButton2:=TSimpleControl.Create(Frame);
+      with FrameButton2 do begin
+        Name:='FrameButton2';
+        Tag:=12;
+        Parent:=Frame;
+      end;
+    end;
+  end;
+
+  procedure InitForm(Form: TSimpleControl; out Frame1: TSimpleControl);
+  var
+    Button1: TSimpleControl;
+  begin
+    with Form do begin
+      // add a button
+      Button1:=TSimpleControl.Create(Form);
+      with Button1 do begin
+        Name:='Button1';
+        Tag:=21;
+        Parent:=Form;
+      end;
+      // add a frame
+      Frame1:=TSimpleControl.Create(Form);
+      TAccessComp(TComponent(Frame1)).SetInline(true);
+      InitFrame(Frame1);
+      with Frame1 do begin
+        Name:='Frame1';
+        Tag:=22;
+        Parent:=Form;
+      end;
+    end;
+  end;
+
+var
+  Frame1, AncestorFrame, AncestorForm, Form,
+    Frame2, Label1: TSimpleControl;
+begin
+  // e.g. a form inherited from with a frame
+  AncestorFrame:=nil;
+  AncestorForm:=nil;
+  Form:=nil;
+  try
+    AncestorFrame:=TSimpleControl.Create(nil);
+    AncestorFrame.Name:='AncestorFrame';
+    InitFrame(AncestorFrame);
+
+    AncestorForm:=TSimpleControl.Create(nil);
+    AncestorForm.Name:='AncestorForm';
+    InitForm(AncestorForm,Frame1);
+    AddAncestor(Frame1,AncestorFrame);
+
+    Form:=TSimpleControl.Create(nil);
+    Form.Name:='Form';
+    InitForm(Form,Frame2);
+    Frame2.Tag:=32;
+    Frame2.Controls[0].Tag:=421;
+    // change Z order of buttons in frame
+    Form.FChildren.Move(0,1);
+    // change Z order of frame in Form
+    Frame2.FChildren.Move(0,1);
+    // add a label
+    Label1:=TSimpleControl.Create(Form);
+    with Label1 do begin
+      Name:='Label1';
+      Tag:=33;
+      Parent:=Form;
+    end;
+
+    TestWriteDescendant('TestAncestorWithInline',Form,AncestorForm,[
+    'Label1:=TSimpleControl.Create(Self);',
+    'with Frame1 do begin',
+    '  Tag:=32;',
+    '  with FrameButton2 do begin',
+    '  end;',
+    '  TPasStreamAccess(TComponent(Frame1)).SetChildOrder(FrameButton2,0);',
+    '  with FrameButton1 do begin',
+    '    Tag:=421;',
+    '  end;',
+    '  TPasStreamAccess(TComponent(Frame1)).SetChildOrder(FrameButton1,1);',
+    'end;',
+    'SetChildOrder(Frame1,0);',
+    'with Button1 do begin',
+    'end;',
+    'SetChildOrder(Button1,1);',
+    'with Label1 do begin',
+    '  Name:=''Label1'';',
+    '  Tag:=33;',
+    '  Parent:=Self;',
+    'end;',
+    ''],true);
+  finally
+    Form.Free;
+    AncestorForm.Free;
+    AncestorFrame.Free;
+  end;
+end;
+
+procedure TTestCompReaderWriterPas.TestInlineDescendant;
+
+  procedure InitFrame(Frame: TSimpleControl);
+  var
+    FrameButton1, FrameButton2: TSimpleControl;
+  begin
+    with Frame do begin
+      Tag:=1;
+      FrameButton1:=TSimpleControl.Create(Frame);
+      with FrameButton1 do begin
+        Name:='FrameButton1';
+        Tag:=11;
+        Parent:=Frame;
+      end;
+      FrameButton2:=TSimpleControl.Create(Frame);
+      with FrameButton2 do begin
+        Name:='FrameButton2';
+        Tag:=12;
+        Parent:=Frame;
+      end;
+    end;
+  end;
+
+  procedure InitForm(Form: TSimpleControl; out Frame1: TSimpleControl);
+  var
+    Button1: TSimpleControl;
+  begin
+    with Form do begin
+      // add a button
+      Button1:=TSimpleControl.Create(Form);
+      with Button1 do begin
+        Name:='Button1';
+        Tag:=21;
+        Parent:=Form;
+      end;
+      // add a frame
+      Frame1:=TSimpleControl.Create(Form);
+      TAccessComp(TComponent(Frame1)).SetInline(true);
+      InitFrame(Frame1);
+      with Frame1 do begin
+        Name:='Frame1';
+        Tag:=22;
+        Parent:=Form;
+      end;
+    end;
+  end;
+
+var
+  AncestorFrame, DescendantFrame, Form, Frame: TSimpleControl;
+begin
+  // e.g. a form inherited from with a frame
+  AncestorFrame:=nil;
+  DescendantFrame:=nil;
+  Form:=nil;
+  try
+    AncestorFrame:=TSimpleControl.Create(nil);
+    AncestorFrame.Name:='AncestorFrame';
+    InitFrame(AncestorFrame);
+
+    DescendantFrame:=TSimpleControl.Create(nil);
+    DescendantFrame.Name:='DescendantFrame';
+    InitFrame(DescendantFrame);
+    AddAncestor(DescendantFrame,AncestorFrame);
+
+    Form:=TSimpleControl.Create(nil);
+    Form.Name:='Form';
+    InitForm(Form,Frame);
+    AddAncestor(Frame,DescendantFrame);
+
+    TestWriteDescendant('TestInlineDescendant',Form,nil,[
+    'Button1:=TSimpleControl.Create(Self);',
+    'Frame1:=TSimpleControl.Create(Self);',
+    'TPasStreamAccess(TComponent(Frame1)).SetInline(True);',
+    'with Button1 do begin',
+    '  Name:=''Button1'';',
+    '  Tag:=21;',
+    '  Parent:=Self;',
+    'end;',
+    'with Frame1 do begin',
+    '  Name:=''Frame1'';',
+    '  Tag:=22;',
+    '  Parent:=Self;',
+    '  with FrameButton1 do begin',
+    '  end;',
+    '  with FrameButton2 do begin',
+    '  end;',
+    'end;',
+    ''],true);
+  finally
+    Form.Free;
+    DescendantFrame.Free;
+    AncestorFrame.Free;
   end;
 end;
 

@@ -1426,10 +1426,12 @@ implementation
                       ) then
                       message(asmr_e_invalid_opcode_and_operand);
                     if
-{$ifndef i8086}
+{$ifdef i8086}
+                       (longint(val)>=-128) and (val<=127) then
+{$else i8086}
                        (opsize<>S_W) and
-{$endif not i8086}
                        (aint(val)>=-128) and (val<=127) then
+{$endif not i8086}
                       ot:=OT_IMM8 or OT_SIGNED
                     else
                       ot:=OT_IMMEDIATE or opsize_2_type[i,opsize];
@@ -2862,7 +2864,11 @@ implementation
       }
 
       var
+{$ifdef i8086}
+        currval : longint;
+{$else i8086}
         currval : aint;
+{$endif i8086}
         currsym : tobjsymbol;
         currrelreloc,
         currabsreloc,
@@ -2932,7 +2938,11 @@ implementation
                 end;
               top_const :
                 begin
+{$ifdef i8086}
+                  currval:=longint(oper[opidx]^.val);
+{$else i8086}
                   currval:=aint(oper[opidx]^.val);
+{$endif i8086}
                   currsym:=nil;
                   currabsreloc:=RELOC_ABSOLUTE;
                   currabsreloc32:=RELOC_ABSOLUTE32;

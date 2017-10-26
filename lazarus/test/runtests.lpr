@@ -1,4 +1,4 @@
-{ $Id: runtests.lpr 54031 2017-01-29 21:04:32Z joost $}
+{ $Id: runtests.lpr 56183 2017-10-25 10:19:31Z mattias $}
 { Copyright (C) 2006 Vincent Snijders
 
   This source is free software; you can redistribute it and/or modify it under
@@ -25,7 +25,7 @@ uses
   testglobals, testunits, dom,
   {Unit needed to set the LCL version and widget set name}
   LCLVersion, InterfaceBase, LCLPlatformDef, Interfaces, TestLazXML,
-  TestAvgLvlTree, TestLConvEncoding;
+  TestAvgLvlTree, TestLConvEncoding, testlazfileutils;
   
 type
 
