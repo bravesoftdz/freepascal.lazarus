@@ -1,4 +1,4 @@
-{ $Id: lclclasses.pp 54853 2017-05-10 14:40:55Z mattias $}
+{ $Id: lclclasses.pp 56207 2017-10-26 14:16:50Z mattias $}
 {
  *****************************************************************************
  *                               lclclasses.pp                               * 
@@ -28,7 +28,7 @@ uses
 type
 
   // SysUtils.LongRec has unsigned Word for Lo and Hi,
-  //  we need a similar record with signed ShortInt
+  //  we need a similar record with signed SmallInt
   LazLongRec = packed record
 {$ifdef FPC_LITTLE_ENDIAN}
     Lo,Hi : SmallInt;
