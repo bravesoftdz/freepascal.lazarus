@@ -718,24 +718,25 @@ begin
     end else begin
       ExeFile:=FindDefaultExecutablePath(Process.Executable,GetCurrentDirUTF8);
       if ExeFile='' then begin
-        ErrorMessage:=Format(lisCanNotFindExecutable, [ExeFile]);
+        ErrorMessage:=Format(lisCanNotFindExecutable, [Process.Executable]);
         CheckError;
         exit;
       end;
       Process.Executable:=ExeFile;
     end;
   end;
-  if not FileExistsUTF8(Process.Executable) then begin
+  ExeFile:=Process.Executable;
+  if not FileExistsUTF8(ExeFile) then begin
     ErrorMessage:=Format(lisMissingExecutable, [ExeFile]);
     CheckError;
     exit;
   end;
-  if DirectoryExistsUTF8(Process.Executable) then begin
+  if DirectoryExistsUTF8(ExeFile) then begin
     ErrorMessage:=Format(lisExecutableIsADirectory, [ExeFile]);
     CheckError;
     exit;
   end;
-  if not FileIsExecutable(Process.Executable) then begin
+  if not FileIsExecutable(ExeFile) then begin
     ErrorMessage:=Format(lisExecutableLacksThePermissionToRun, [ExeFile]);
     CheckError;
     exit;
