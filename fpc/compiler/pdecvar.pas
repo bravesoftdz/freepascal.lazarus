@@ -871,6 +871,7 @@ implementation
     procedure read_public_and_external(vs: tabstractvarsym);
     var
       is_dll,
+      is_far,
       is_cdecl,
       is_external_var,
       is_weak_external,
@@ -887,6 +888,7 @@ implementation
         end;
       { defaults }
       is_dll:=false;
+      is_far:=false;
       is_cdecl:=false;
       is_external_var:=false;
       is_public_var:=false;
@@ -922,6 +924,14 @@ implementation
          try_to_consume(_EXTERNAL) then
         begin
           is_external_var:=true;
+          { near/far? }
+          if target_info.system in systems_allow_external_far_var then
+            begin
+              if try_to_consume(_FAR) then
+                is_far:=true
+              else if try_to_consume(_NEAR) then
+                is_far:=false;
+            end;
           if (idtoken<>_NAME) and (token<>_SEMICOLON) then
             begin
               is_dll:=true;
@@ -988,6 +998,8 @@ implementation
           if vo_is_typed_const in vs.varoptions then
             Message(parser_e_initialized_not_for_external);
           include(vs.varoptions,vo_is_external);
+          if is_far then
+            include(vs.varoptions,vo_is_far);
           if (is_weak_external) then
             begin
               if not(target_info.system in systems_weak_linking) then
